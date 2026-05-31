@@ -36,7 +36,7 @@ class BGEM3Embedding(EmbeddingModel):
     def __init__(self, model_name: str = "BAAI/bge-m3"):
         from sentence_transformers import SentenceTransformer
         self.model = SentenceTransformer(model_name)
-        self._dim = 1024
+        self._dim = self.model.get_sentence_embedding_dimension() or 512
 
     @property
     def dim(self) -> int:

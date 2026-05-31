@@ -1,0 +1,68 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WBER_RAG_DIR = os.path.dirname(os.path.abspath(__file__))
+CHROMA_PERSIST_DIR = os.path.join(WBER_RAG_DIR, "data", "chroma_db")
+
+# Chunking
+CHUNK_SIZE = 512       # Chinese characters per chunk
+CHUNK_OVERLAP = 128    # Overlap between adjacent chunks
+
+# Embedding
+EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"  # local Chinese-optimized, ~100MB
+EMBEDDING_DIM = 512    # bge-small-zh-v1.5 outputs 512-dim vectors
+
+# Retrieval
+TOP_SECTIONS = 4       # Number of top sections to retrieve in stage 1
+TOP_CHUNKS = 6         # Number of top chunks to retrieve in stage 2
+
+# LLM
+LLM_MODEL = "deepseek-chat"
+LLM_TEMPERATURE = 0.1
+LLM_MAX_TOKENS = 2048
+LLM_BASE_URL = "https://api.deepseek.com"
+LLM_API_KEY_ENV = "DEEPSEEK_API_KEY"
+
+# Source registry — add new books here
+SOURCES = [
+    {
+        "name": "三联-韦伯作品集",
+        "type": "epub",
+        "path": os.path.join(PROJECT_ROOT, "三联-韦伯作品集.epub"),
+        "category": "韦伯著述",
+        "edition": "三联",
+    },
+    {
+        "name": "上人社-韦伯作品集",
+        "type": "epub",
+        "path": os.path.join(PROJECT_ROOT, "上人社-韦伯作品集.epub"),
+        "category": "韦伯著述",
+        "edition": "上人社",
+    },
+    {
+        "name": "民族国家与经济政策",
+        "type": "epub",
+        "path": os.path.join(PROJECT_ROOT, "马克斯·韦伯 - 2018 - 民族国家与经济政策：修订译本.epub"),
+        "category": "韦伯著述",
+        "edition": "商务",
+    },
+    {
+        "name": "社会科学方法论文集",
+        "type": "epub",
+        "path": os.path.join(PROJECT_ROOT, "马克斯·韦伯 - 2022 - 社会科学方法论文集.epub"),
+        "category": "韦伯著述",
+        "edition": "商务",
+    },
+    {
+        "name": "克斯勒-韦伯生平著述及影响",
+        "type": "markdown",
+        "path": os.path.join(PROJECT_ROOT, "迪尔克·克斯勒 - 2004 - 马克斯·韦伯的生平、著述及影响/迪尔克·克斯勒 - 2004 - 马克斯·韦伯的生平、著述及影响.md"),
+        "category": "传记与介绍",
+        "edition": "克斯勒",
+    },
+]
+
+CATEGORIES = ["韦伯著述", "传记与介绍", "相关史料", "思想研究与讨论"]

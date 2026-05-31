@@ -1,0 +1,12 @@
+# API keys
+.env
+
+# ChromaDB data (rebuild with ingest.py)
+weber-rag/data/chroma_db/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(conda activate *)",
+      "Bash(pip install *)",
+      "Bash(conda run *)",
+      "Bash(grep -E '^#{1,4}\\\\s' \"/Users/liuyaxuan/Desktop/Weber Project/迪尔克·克斯勒 - 2004 - 马克斯·韦伯的生平、著述及影响/迪尔克·克斯勒 - 2004 - 马克斯·韦伯的生平、著述及影响.md\")",
+      "Bash(gh auth *)",
+      "Bash(brew install *)",
+      "Bash(git remote *)",
+      "Bash(git add *)"
+    ]
+  }
+}

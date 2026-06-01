@@ -44,9 +44,6 @@ python ingest.py --delete SRC       # remove one source (no re-embed needed)
 python ingest.py --force            # nuke everything and rebuild
 python ingest.py --repair           # fix old data lacking source_name
 
-# Offline mode (model already cached, proxy not needed)
-HF_HUB_OFFLINE=1 python ingest.py
-
 # Query
 python query.py "韦伯如何定义'理想类型'？"
 python query.py -i                      # interactive mode
@@ -61,10 +58,12 @@ python query.py --top-sections 6 --top-chunks 10 "..."  # override retrieval dep
   - `生活·读书·新知三联书店` (not "三联" — ambiguous with 上海三联)
   - `上海人民出版社` (not "上人社")
   - `法律出版社` (Käsler biography publisher)
-- **bge-m3 model**: ~2GB, downloads to `D:\huggingface_cache\`. Set `HF_HUB_OFFLINE=1` to skip network check when proxy is down.
-- **GPU VRAM**: RTX 4060 Laptop 8GB. `EMBEDDING_BATCH_SIZE=3` is the max safe value. Default (32) OOMs. Test with `nvidia-smi` before increasing.
-- **Incremental ingest**: `get_ingested_sources()` checks `source_name` metadata. If missing (old data), falls back to matching `edition` against `SOURCES` config. Run `--repair` after first ingest with the new code to populate `source_name`.
+- **bge-m3 model**: ~2GB, downloads to `D:\huggingface_cache\`. `HF_HUB_OFFLINE=1` is set automatically in `embeddings.py` — no manual env var needed for ingest or query.
+- **GPU VRAM**: RTX 4060 Laptop 8GB. `EMBEDDING_BATCH_SIZE=3` is the max safe value (~7.3GB used). Default (32) OOMs. Monitor with `nvidia-smi`.
+- **Incremental ingest**: `get_ingested_sources()` checks `source_name` metadata. If missing (old data), falls back to matching `edition` against `SOURCES` config. Run `--repair` once after first ingest with new code to populate `source_name`.
+- **--delete**: Remove a single source without touching others: `python ingest.py --delete SRC`. No need to `--force` nuke the whole DB.
 - **Source ordering**: SOURCES in `config.py` are ordered small→large so quick wins finish first. Keep this order when adding new books.
+- **EPUB parser**: `loaders/epub.py` splits TOC entries sharing the same HTML file by detecting sibling section boundaries. If texts appear duplicated or too large, check `_build_file_index` / `_extract_section_text`.
 
 ### Architecture
 

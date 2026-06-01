@@ -26,15 +26,26 @@ Key packages: `ebooklib`, `beautifulsoup4` (bs4), `lxml`, `chromadb`, `sentence-
 
 ## RAG Knowledge Base (`weber-rag/`)
 
-Two-stage hierarchical retrieval system for querying Weber's works:
+Two-stage hierarchical retrieval system for querying Weber's works.
+
+### Quick reference
 
 ```bash
-# First-time setup: install dependencies and configure API keys
+# First-time setup
 pip install -r weber-rag/requirements.txt
-cp weber-rag/.env.template weber-rag/.env   # then edit API keys
+cp weber-rag/.env.template weber-rag/.env   # edit DEEPSEEK_API_KEY
+cd weber-rag && python ingest.py            # first run: downloads bge-m3 (~2GB)
 
-# Ingest all sources (builds ChromaDB index; first run downloads bge-m3 ~2GB)
-cd weber-rag && python ingest.py
+# Daily use
+python ingest.py                    # incremental: only new sources
+python ingest.py --stats            # show what's ingested
+python ingest.py --add SRC          # re-ingest one source (upsert)
+python ingest.py --delete SRC       # remove one source (no re-embed needed)
+python ingest.py --force            # nuke everything and rebuild
+python ingest.py --repair           # fix old data lacking source_name
+
+# Offline mode (model already cached, proxy not needed)
+HF_HUB_OFFLINE=1 python ingest.py
 
 # Query
 python query.py "韦伯如何定义'理想类型'？"
@@ -43,6 +54,17 @@ python query.py -c "韦伯著述" "新教伦理"    # filter by category
 python query.py --list-categories       # show categories and index stats
 python query.py --top-sections 6 --top-chunks 10 "..."  # override retrieval depth
 ```
+
+### Important operational notes
+
+- **Publisher names use FULL names** (not abbreviations):
+  - `生活·读书·新知三联书店` (not "三联" — ambiguous with 上海三联)
+  - `上海人民出版社` (not "上人社")
+  - `法律出版社` (Käsler biography publisher)
+- **bge-m3 model**: ~2GB, downloads to `D:\huggingface_cache\`. Set `HF_HUB_OFFLINE=1` to skip network check when proxy is down.
+- **GPU VRAM**: RTX 4060 Laptop 8GB. `EMBEDDING_BATCH_SIZE=3` is the max safe value. Default (32) OOMs. Test with `nvidia-smi` before increasing.
+- **Incremental ingest**: `get_ingested_sources()` checks `source_name` metadata. If missing (old data), falls back to matching `edition` against `SOURCES` config. Run `--repair` after first ingest with the new code to populate `source_name`.
+- **Source ordering**: SOURCES in `config.py` are ordered small→large so quick wins finish first. Keep this order when adding new books.
 
 ### Architecture
 
@@ -80,7 +102,7 @@ The **chunker** (`chunker.py`) splits Chinese text at natural boundaries with th
 ### Adding new books
 
 1. Add entry to `SOURCES` list in `config.py` with `type` (`epub` or `markdown`), `category`, and `edition`
-2. Run `python ingest.py --force`
+2. Run `python ingest.py` (incremental — only the new book will be processed)
 
 ### Source categories
 

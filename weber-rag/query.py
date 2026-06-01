@@ -104,6 +104,84 @@ def answer_query(query: str, embed_model, category_filter: str | None = None) ->
     return answer
 
 
+def _get_llm_client() -> OpenAI:
+    return OpenAI(
+        api_key=os.environ.get(config.LLM_API_KEY_ENV, os.environ.get("OPENAI_API_KEY")),
+        base_url=config.LLM_BASE_URL,
+    )
+
+
+def answer_query_with_history(query: str, embed_model,
+                               category_filter: str | None = None):
+    """First question: full RAG retrieval, returns (answer, history)."""
+    stats = collection_stats()
+    if stats["chunks"] == 0:
+        return "知识库尚未索引。请先运行 python ingest.py", []
+
+    q_emb = embed_model.embed_query(query)
+    sections, chunks = hierarchical_search(
+        q_emb,
+        top_sections=config.TOP_SECTIONS,
+        top_chunks=config.TOP_CHUNKS,
+        category_filter=category_filter,
+    )
+
+    if not sections and not chunks:
+        return "未找到相关内容。", []
+
+    context = format_context(sections, chunks)
+    client = _get_llm_client()
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"参考资料：\n\n{context}\n\n问题：{query}"},
+    ]
+
+    response = client.chat.completions.create(
+        model=config.LLM_MODEL,
+        temperature=config.LLM_TEMPERATURE,
+        max_tokens=config.LLM_MAX_TOKENS,
+        messages=messages,
+    )
+
+    answer = response.choices[0].message.content
+    messages.append({"role": "assistant", "content": answer})
+    return answer, messages
+
+
+def follow_up(query: str, history: list[dict], embed_model,
+              category_filter: str | None = None):
+    """Follow-up question: re-retrieve, append to history, returns (answer, history)."""
+    # Re-retrieve context for the new question
+    q_emb = embed_model.embed_query(query)
+    sections, chunks = hierarchical_search(
+        q_emb,
+        top_sections=config.TOP_SECTIONS,
+        top_chunks=config.TOP_CHUNKS,
+        category_filter=category_filter,
+    )
+
+    context = format_context(sections, chunks)
+    client = _get_llm_client()
+
+    # Append user message with new context
+    history.append({
+        "role": "user",
+        "content": f"参考资料：\n\n{context}\n\n追问：{query}",
+    })
+
+    response = client.chat.completions.create(
+        model=config.LLM_MODEL,
+        temperature=config.LLM_TEMPERATURE,
+        max_tokens=config.LLM_MAX_TOKENS,
+        messages=history,
+    )
+
+    answer = response.choices[0].message.content
+    history.append({"role": "assistant", "content": answer})
+    return answer, history
+
+
 def main():
     parser = argparse.ArgumentParser(description="Query the Weber knowledge base")
     parser.add_argument("query", nargs="?", help="Search query (if not using --interactive)")
@@ -132,9 +210,11 @@ def main():
     embed_model = create_embedding_model()
 
     if args.interactive:
-        print("Weber 知识库查询（输入 quit 退出）", file=sys.stderr)
+        print("Weber 知识库查询（输入 quit 退出，输入 /new 开始新话题）", file=sys.stderr)
         print(f"来源过滤: {args.category or '全部'}", file=sys.stderr)
         print(file=sys.stderr)
+
+        history = []  # conversation messages for LLM
 
         while True:
             try:
@@ -147,9 +227,22 @@ def main():
                 continue
             if query.lower() in ("quit", "exit", "q"):
                 break
+            if query.lower() in ("/new", "/clear"):
+                history = []
+                print("（已开始新话题）\n")
+                continue
 
             print(file=sys.stderr)
-            answer = answer_query(query, embed_model, args.category)
+
+            if not history:
+                # First question: full RAG retrieval + start conversation
+                answer, history = answer_query_with_history(
+                    query, embed_model, args.category)
+            else:
+                # Follow-up: use conversation context, re-retrieve if needed
+                answer, history = follow_up(query, history, embed_model,
+                                            args.category)
+
             print(answer)
             print()
     else:

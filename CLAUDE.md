@@ -46,10 +46,12 @@ python ingest.py --repair           # fix old data lacking source_name
 
 # Query
 python query.py "韦伯如何定义'理想类型'？"
-python query.py -i                      # interactive mode
+python query.py -i                      # interactive mode (supports follow-ups)
 python query.py -c "韦伯著述" "新教伦理"    # filter by category
 python query.py --list-categories       # show categories and index stats
 python query.py --top-sections 6 --top-chunks 10 "..."  # override retrieval depth
+
+# Interactive mode: /new to reset conversation, quit to exit
 ```
 
 ### Important operational notes
@@ -97,6 +99,7 @@ The **chunker** (`chunker.py`) splits Chinese text at natural boundaries with th
 2. Format into a structured reference block (chapters section, paragraphs section)
 3. Send to LLM with a SYSTEM_PROMPT that instructs it to act as a Weber expert, cite sources, and acknowledge gaps
 4. Append a source summary to the response
+5. Interactive mode (`-i`): maintains conversation history for follow-up questions. First question triggers full RAG retrieval; follow-ups re-retrieve with new query but include prior chat context. Use `/new` to reset.
 
 ### Adding new books
 

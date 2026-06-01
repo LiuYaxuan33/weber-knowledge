@@ -4,7 +4,8 @@ import ebooklib
 from ebooklib import epub
 
 
-def load_epub(epub_path: str, edition: str, category: str) -> list[dict]:
+def load_epub(epub_path: str, edition: str, category: str,
+              source_name: str = "") -> list[dict]:
     """Load an EPUB and return a list of sections with metadata.
 
     Each section: {"text": str, "metadata": {"section_id": str, "book": str, ...}}
@@ -14,7 +15,8 @@ def load_epub(epub_path: str, edition: str, category: str) -> list[dict]:
     html_texts = _extract_html(book)  # dict: href_base -> clean text
 
     sections = []
-    _flatten_toc(toc, html_texts, sections, edition, category, parent_book="")
+    _flatten_toc(toc, html_texts, sections, edition, category, parent_book="",
+                 source_name=source_name)
     return sections
 
 
@@ -75,7 +77,7 @@ def _extract_html(book) -> dict[str, str]:
 
 def _flatten_toc(toc: list[dict], html_texts: dict[str, str],
                  sections: list, edition: str, category: str,
-                 parent_book: str = ""):
+                 parent_book: str = "", source_name: str = ""):
     """Walk TOC tree, extract text for each section, and append to sections list."""
     for entry in toc:
         title = entry["title"]
@@ -94,7 +96,7 @@ def _flatten_toc(toc: list[dict], html_texts: dict[str, str],
             # Skip front-matter fluff but recurse into children
             if entry["children"]:
                 _flatten_toc(entry["children"], html_texts, sections,
-                            edition, category, book_name)
+                            edition, category, book_name, source_name)
             continue
 
         # Build hierarchical path: book > chapter > section
@@ -106,6 +108,7 @@ def _flatten_toc(toc: list[dict], html_texts: dict[str, str],
             "level": entry["level"],
             "edition": edition,
             "source_category": category,
+            "source_name": source_name,
             "href": entry["href"],
             "chunk_size": 512,
             "chunk_overlap": 128,
@@ -115,7 +118,7 @@ def _flatten_toc(toc: list[dict], html_texts: dict[str, str],
         # Recurse into children
         if entry["children"]:
             _flatten_toc(entry["children"], html_texts, sections,
-                        edition, category, book_name)
+                        edition, category, book_name, source_name)
 
 
 def _get_text_for_entry(entry: dict, html_texts: dict[str, str]) -> str:

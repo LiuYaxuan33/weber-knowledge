@@ -1,7 +1,8 @@
 import re
 
 
-def load_markdown(md_path: str, edition: str, category: str) -> list[dict]:
+def load_markdown(md_path: str, edition: str, category: str,
+                   source_name: str = "") -> list[dict]:
     """Load a markdown file and split into sections by ## headings.
 
     Consecutive sections with the same chapter name (from page-break markers)
@@ -68,6 +69,7 @@ def load_markdown(md_path: str, edition: str, category: str) -> list[dict]:
                 "level": 1,
                 "edition": edition,
                 "source_category": category,
+                "source_name": source_name,
                 "chunk_size": 512,
                 "chunk_overlap": 128,
             },

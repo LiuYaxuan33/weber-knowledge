@@ -172,6 +172,39 @@ def collection_stats() -> dict:
         return {"sections": 0, "chunks": 0}
 
 
+def repair_source_names(source_map: dict[str, str]) -> int:
+    """Add source_name to existing metadatas that lack it.
+
+    source_map: {edition: source_name} — built from config.SOURCES.
+    Returns number of records updated.
+    """
+    sec_coll, chk_coll = get_collections()
+    updated = 0
+
+    for coll, name in [(sec_coll, "sections"), (chk_coll, "chunks")]:
+        if coll.count() == 0:
+            continue
+        result = coll.get(include=["metadatas"])
+        ids = result.get("ids", [])
+        metadatas = result.get("metadatas", [])
+
+        fix_ids = []
+        fix_metas = []
+        for id_, meta in zip(ids, metadatas):
+            if meta and "source_name" not in meta:
+                edition = meta.get("edition", "")
+                if edition in source_map:
+                    new_meta = dict(meta)
+                    new_meta["source_name"] = source_map[edition]
+                    fix_ids.append(id_)
+                    fix_metas.append(new_meta)
+
+        if fix_ids:
+            # We need to upsert with all required fields
+            coll.update(ids=fix_ids, metadatas=fix_metas)
+            updated += len(fix_ids)
+
+    return updated
 def _format_results(result: dict) -> list[dict]:
     """Convert ChromaDB query result to list of dicts."""
     if not result["ids"] or not result["ids"][0]:

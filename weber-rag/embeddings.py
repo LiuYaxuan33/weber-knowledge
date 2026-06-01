@@ -35,8 +35,11 @@ class OpenAIEmbedding(EmbeddingModel):
 class BGEM3Embedding(EmbeddingModel):
     def __init__(self, model_name: str = "BAAI/bge-m3"):
         from sentence_transformers import SentenceTransformer
-        self.model = SentenceTransformer(model_name)
+        import config
+        device = config.EMBEDDING_DEVICE or None
+        self.model = SentenceTransformer(model_name, device=device)
         self._dim = self.model.get_sentence_embedding_dimension() or 512
+        self._batch_size = getattr(config, 'EMBEDDING_BATCH_SIZE', 2)
 
     @property
     def dim(self) -> int:
@@ -44,7 +47,10 @@ class BGEM3Embedding(EmbeddingModel):
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         embeddings = self.model.encode(
-            texts, normalize_embeddings=True, show_progress_bar=True
+            texts,
+            normalize_embeddings=True,
+            show_progress_bar=True,
+            batch_size=self._batch_size
         )
         return embeddings.tolist()
 

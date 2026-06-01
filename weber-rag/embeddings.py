@@ -1,3 +1,7 @@
+import os
+# Must be set before any huggingface_hub import (inside SentenceTransformer)
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
 from abc import ABC, abstractmethod
 import numpy as np
 
@@ -34,12 +38,8 @@ class OpenAIEmbedding(EmbeddingModel):
 
 class BGEM3Embedding(EmbeddingModel):
     def __init__(self, model_name: str = "BAAI/bge-m3"):
-        import os
         from sentence_transformers import SentenceTransformer
         import config
-        # Avoid hanging when proxy/HuggingFace is unreachable
-        if "HF_HUB_OFFLINE" not in os.environ:
-            os.environ["HF_HUB_OFFLINE"] = "1"
         device = config.EMBEDDING_DEVICE or None
         self.model = SentenceTransformer(model_name, device=device)
         self._dim = self.model.get_sentence_embedding_dimension() or 512

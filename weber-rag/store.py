@@ -42,6 +42,30 @@ def reset_collections():
     _client = None
 
 
+def delete_source(source_name: str) -> int:
+    """Delete all sections and chunks belonging to a single source.
+
+    Returns total number of deleted records.
+    """
+    sec_coll, chk_coll = get_collections()
+    total = 0
+
+    # Try source_name first (new data), then fall back to edition field
+    for coll in [sec_coll, chk_coll]:
+        if coll.count() == 0:
+            continue
+        # Check which field exists in metadata
+        sample = coll.get(limit=1, include=["metadatas"])
+        metas = sample.get("metadatas", [])
+        if metas and metas[0] and "source_name" in metas[0]:
+            coll.delete(where={"source_name": source_name})
+        elif metas and metas[0] and "edition" in metas[0]:
+            coll.delete(where={"edition": source_name})
+        total += coll.count()  # approximate after delete
+
+    return total
+
+
 def add_sections(sections: list[dict], embedding_model) -> int:
     """Add section-level documents.
 

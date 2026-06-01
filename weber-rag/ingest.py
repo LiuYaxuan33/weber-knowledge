@@ -13,7 +13,7 @@ import argparse
 import config
 from embeddings import create_embedding_model
 from chunker import chunk_with_metadata
-from store import add_sections, add_chunks, reset_collections, collection_stats, get_collections, repair_source_names
+from store import add_sections, add_chunks, reset_collections, collection_stats, get_collections, repair_source_names, delete_source
 from loaders.epub import load_epub
 from loaders.markdown import load_markdown
 
@@ -95,7 +95,15 @@ def main():
                         help="Show collection stats and ingested books")
     parser.add_argument("--repair", action="store_true",
                         help="Add source_name to existing data from older ingest")
+    parser.add_argument("--delete", type=str, metavar="SRC",
+                        help="Delete a single source from the database by name")
     args = parser.parse_args()
+
+    if args.delete:
+        print(f"Deleting source: {args.delete}")
+        n = delete_source(args.delete)
+        print(f"Deleted ~{n} records for '{args.delete}'.")
+        return
 
     if args.repair:
         source_map = build_edition_source_map()

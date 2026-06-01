@@ -42,7 +42,7 @@ class BGEM3Embedding(EmbeddingModel):
         import config
         device = config.EMBEDDING_DEVICE or None
         self.model = SentenceTransformer(model_name, device=device)
-        self._dim = self.model.get_sentence_embedding_dimension() or 512
+        self._dim = self.model.get_embedding_dimension() or 512
         self._batch_size = getattr(config, 'EMBEDDING_BATCH_SIZE', 2)
 
     @property

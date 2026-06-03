@@ -1,6 +1,6 @@
 import os
 # Must be set before any huggingface_hub import (inside SentenceTransformer)
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ["HF_HUB_OFFLINE"] = "1"  # Force offline (model must be pre-downloaded)
 
 from abc import ABC, abstractmethod
 import numpy as np

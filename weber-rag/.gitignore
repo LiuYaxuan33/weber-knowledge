@@ -1,5 +1,7 @@
 .env
 data/chroma_db/
+data/weber_data.npz
+data/*.zip
 __pycache__/
 .DS_Store
 Downloads/

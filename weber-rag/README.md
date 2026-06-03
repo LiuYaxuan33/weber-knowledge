@@ -21,19 +21,63 @@ Source files (EPUB/Markdown)
 
 ## 快速开始
 
+### 新电脑（从 git clone 开始）
+
 ```bash
-# 安装依赖
-pip install -r requirements.txt
+# 一键安装
+bash setup.sh        # Mac / Linux / Git Bash
+# 或
+setup.bat            # Windows CMD
+```
 
-# 配置 API Key
-cp .env.template .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY
+`setup.sh` 自动完成：检查 Python → 配置 `.env`（提示输入 API Key）→ 安装依赖 → 从分片文件重建向量库。
 
-# 首次索引（下载模型 + 索引全部著作，约需 5-10 分钟）
-python ingest.py
+### 已有完整环境（仅更新代码）
 
-# 查询
+```bash
+git pull
+python ingest.py     # 增量索引（如有新增来源）
+```
+
+### Web 界面（推荐）
+
+```bash
+python app.py                  # 浏览器打开 http://127.0.0.1:7860
+python app.py --port 8080      # 自定义端口
+```
+
+界面提供：
+- 聊天式问答（支持多轮追问）
+- 左侧筛选：按来源/分类过滤
+- 「仅搜索」模式：只检索不调用 LLM（不消耗 API）
+- 输入 `/new` 重置对话
+
+### 终端查询
+
+```bash
 python query.py "韦伯如何定义'理想类型'？"
+python query.py -i              # 交互模式（支持追问）
+```
+
+## 可移植数据
+
+向量数据库（ChromaDB）已预先构建并导出为分片文件，新电脑无需运行 `ingest.py`。
+
+### 从源机器导出
+
+```bash
+python export_data.py --split 50   # 生成 data/weber_data.npz + .part* 分片
+git add data/weber_data.npz.part*
+git commit -m "Update vector data"
+```
+
+### 在新机器上导入
+
+`setup.sh` 自动处理。手动操作：
+
+```bash
+python import_data.py             # 从 .npz 或分片重建 chroma_db
+python import_data.py --force     # 覆盖已有数据
 ```
 
 ## 查询

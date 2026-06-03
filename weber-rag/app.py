@@ -37,9 +37,7 @@ def _ensure_model():
 
 def _do_search(query: str, source_filter: str | None,
                category_filter: str | None,
-               source_exclude: list[str] | None = None,
-               diversity_bonus: float = 0.15,
-               cross_lang_bonus: float = 0.10) -> str:
+               source_exclude: list[str] | None = None) -> str:
     """Search-only: retrieve and format results, no LLM."""
     stats = collection_stats()
     if stats["chunks"] == 0:
@@ -54,8 +52,6 @@ def _do_search(query: str, source_filter: str | None,
         source_filter=source_filter,
         source_exclude_list=source_exclude,
         query_text=query,
-        diversity_bonus=diversity_bonus,
-        cross_lang_bonus=cross_lang_bonus,
     )
 
     if not sections and not chunks:
@@ -94,9 +90,7 @@ def _do_search(query: str, source_filter: str | None,
 def _do_qa(query: str, history: list[dict],
            source_filter: str | None,
            category_filter: str | None,
-           source_exclude: list[str] | None = None,
-           diversity_bonus: float = 0.15,
-           cross_lang_bonus: float = 0.10) -> tuple[str, list[dict]]:
+           source_exclude: list[str] | None = None) -> tuple[str, list[dict]]:
     """Full RAG + LLM Q&A. Returns (answer, new_history)."""
     stats = collection_stats()
     if stats["chunks"] == 0:
@@ -111,8 +105,6 @@ def _do_qa(query: str, history: list[dict],
         source_filter=source_filter,
         source_exclude_list=source_exclude,
         query_text=query,
-        diversity_bonus=diversity_bonus,
-        cross_lang_bonus=cross_lang_bonus,
     )
 
     if not sections and not chunks:
@@ -154,7 +146,7 @@ def _do_qa(query: str, history: list[dict],
 
 def _handle_chat(message: str, chat_history: list, llm_state,
                  search_mode: bool, src_filter: str, cat_filter: str,
-                 exc_filter: list, div_bonus: float, lang_bonus: float):
+                 exc_filter: list):
     """Process one chat turn.
 
     Returns: (updated_chat_history, empty_input, updated_llm_state)
@@ -163,7 +155,7 @@ def _handle_chat(message: str, chat_history: list, llm_state,
 
     source = src_filter.strip() if src_filter else None
     category = cat_filter.strip() if cat_filter else None
-    excludes = [e for e in (exc_filter or []) if e]  # Filter out empty strings
+    excludes = [e for e in (exc_filter or []) if e]
     excludes = excludes if excludes else None
     chat_history = list(chat_history) if chat_history else []
 
@@ -187,9 +179,7 @@ def _handle_chat(message: str, chat_history: list, llm_state,
     if search_mode:
         answer = _do_search(message, source_filter=source,
                             category_filter=category,
-                            source_exclude=excludes,
-                            diversity_bonus=div_bonus,
-                            cross_lang_bonus=lang_bonus)
+                            source_exclude=excludes)
         chat_history.append({"role": "user", "content": message})
         chat_history.append({"role": "assistant", "content": answer})
         return chat_history, "", llm_state
@@ -198,9 +188,7 @@ def _handle_chat(message: str, chat_history: list, llm_state,
         answer, new_state = _do_qa(message, state,
                                    source_filter=source,
                                    category_filter=category,
-                                   source_exclude=excludes,
-                                   diversity_bonus=div_bonus,
-                                   cross_lang_bonus=lang_bonus)
+                                   source_exclude=excludes)
         chat_history.append({"role": "user", "content": message})
         chat_history.append({"role": "assistant", "content": answer})
         return chat_history, "", new_state
@@ -286,9 +274,15 @@ def build_ui():
         msg_input.submit(
             fn=_handle_chat,
             inputs=[msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd,
-                    exc_dd, div_slider, lang_slider],
+                    exc_dd],
             outputs=[chatbot, msg_input, llm_state],
         )
+
+        # Sliders update config in-place, no need to pass through chat
+        div_slider.change(fn=lambda v: setattr(config, "DIVERSITY_BONUS", v),
+                          inputs=[div_slider])
+        lang_slider.change(fn=lambda v: setattr(config, "CROSS_LANG_BONUS", v),
+                           inputs=[lang_slider])
 
     return demo
 

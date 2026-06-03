@@ -20,6 +20,8 @@ EMBEDDING_DEVICE = None   # None = auto (GPU if available), "cpu" to force CPU
 # Retrieval
 TOP_SECTIONS = 10      # Number of top sections to retrieve in stage 1
 TOP_CHUNKS = 15        # Number of top chunks to retrieve in stage 2
+DIVERSITY_BONUS = 0.15 # Score boost for the first chunk from each book
+CROSS_LANG_BONUS = 0.10 # Score boost for chunks in a different language
 
 # LLM
 LLM_MODEL = "deepseek-chat"

@@ -129,25 +129,31 @@ def _batch_upsert(coll, ids, embeddings, documents, metadatas, batch_size=5000):
         )
 
 
-def _build_where(source_filter: str | None = None,
+def _build_where(source_filter: str | list[str] | None = None,
                  source_exclude: str | None = None,
                  source_exclude_list: list[str] | None = None,
-                 category_filter: str | None = None,
+                 category_filter: str | list[str] | None = None,
                  collection_filter: str | None = None,
                  collection_exclude: str | None = None,
                  extra: dict | None = None) -> dict | None:
     """Build a ChromaDB where clause from optional filters.
 
-    All string values use exact match ($eq / $ne).
-    source_filter/exclude match against 'book' field.
+    Filters that accept a list use $in / $nin for OR matching.
+    source_filter/exclude match against 'source_name' field.
     collection_filter/exclude match against 'source_name' field.
     source_exclude_list: multiple source_name values to exclude.
     """
     conditions = []
     if category_filter:
-        conditions.append({"source_category": category_filter})
+        if isinstance(category_filter, list):
+            conditions.append({"source_category": {"$in": category_filter}})
+        else:
+            conditions.append({"source_category": category_filter})
     if source_filter:
-        conditions.append({"source_name": source_filter})
+        if isinstance(source_filter, list):
+            conditions.append({"source_name": {"$in": source_filter}})
+        else:
+            conditions.append({"source_name": source_filter})
     if source_exclude:
         conditions.append({"source_name": {"$ne": source_exclude}})
     if source_exclude_list:
@@ -168,8 +174,8 @@ def _build_where(source_filter: str | None = None,
 
 
 def search_sections(query_embedding: list[float], n_results: int = 4,
-                    category_filter: str | None = None,
-                    source_filter: str | None = None,
+                    category_filter: str | list[str] | None = None,
+                    source_filter: str | list[str] | None = None,
                     source_exclude: str | None = None,
                     source_exclude_list: list[str] | None = None,
                     collection_filter: str | None = None,
@@ -193,8 +199,8 @@ def search_sections(query_embedding: list[float], n_results: int = 4,
 
 
 def search_chunks(query_embedding: list[float], section_ids: list[str],
-                  n_results: int = 6, category_filter: str | None = None,
-                  source_filter: str | None = None,
+                  n_results: int = 6, category_filter: str | list[str] | None = None,
+                  source_filter: str | list[str] | None = None,
                   source_exclude: str | None = None,
                   source_exclude_list: list[str] | None = None,
                   collection_filter: str | None = None,
@@ -221,8 +227,8 @@ def search_chunks(query_embedding: list[float], section_ids: list[str],
 
 def hierarchical_search(query_embedding: list[float],
                         top_sections: int = 4, top_chunks: int = 6,
-                        category_filter: str | None = None,
-                        source_filter: str | None = None,
+                        category_filter: str | list[str] | None = None,
+                        source_filter: str | list[str] | None = None,
                         source_exclude: str | None = None,
                         source_exclude_list: list[str] | None = None,
                         collection_filter: str | None = None,

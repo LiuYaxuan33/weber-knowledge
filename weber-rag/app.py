@@ -35,8 +35,8 @@ def _ensure_model():
 
 # ── Chat logic ───────────────────────────────────────────────────────────────
 
-def _do_search(query: str, source_filter: str | None,
-               category_filter: str | None,
+def _do_search(query: str, source_filter: list[str] | None,
+               category_filter: list[str] | None,
                source_exclude: list[str] | None = None) -> str:
     """Search-only: retrieve and format results, no LLM."""
     stats = collection_stats()
@@ -88,8 +88,8 @@ def _do_search(query: str, source_filter: str | None,
 
 
 def _do_qa(query: str, history: list[dict],
-           source_filter: str | None,
-           category_filter: str | None,
+           source_filter: list[str] | None,
+           category_filter: list[str] | None,
            source_exclude: list[str] | None = None) -> tuple[str, list[dict]]:
     """Full RAG + LLM Q&A. Returns (answer, new_history)."""
     stats = collection_stats()
@@ -145,7 +145,7 @@ def _do_qa(query: str, history: list[dict],
 # ── Gradio interface ─────────────────────────────────────────────────────────
 
 def _handle_chat(message: str, chat_history: list, llm_state,
-                 search_mode: bool, src_filter: str, cat_filter: str,
+                 search_mode: bool, src_filter: list, cat_filter: list,
                  exc_filter: list, div_bonus: float, lang_bonus: float):
     """Process one chat turn."""
     _ensure_model()
@@ -154,10 +154,9 @@ def _handle_chat(message: str, chat_history: list, llm_state,
     config.DIVERSITY_BONUS = div_bonus
     config.CROSS_LANG_BONUS = lang_bonus
 
-    source = src_filter.strip() if src_filter else None
-    category = cat_filter.strip() if cat_filter else None
-    excludes = [e for e in (exc_filter or []) if e]
-    excludes = excludes if excludes else None
+    source = [s for s in (src_filter or []) if s] or None
+    category = [c for c in (cat_filter or []) if c] or None
+    excludes = [e for e in (exc_filter or []) if e] or None
     chat_history = list(chat_history) if chat_history else []
 
     # Handle / commands
@@ -212,12 +211,14 @@ def build_ui():
             with gr.Column(scale=1, min_width=220):
                 gr.Markdown("### 筛选条件")
                 src_dd = gr.Dropdown(
-                    choices=sources, value="", label="来源筛选",
-                    info="按具体书或合集过滤",
+                    choices=sources[1:], value=[], label="来源筛选",
+                    info="按具体书或合集过滤（可多选，空 = 全部）",
+                    multiselect=True,
                 )
                 cat_dd = gr.Dropdown(
-                    choices=categories, value="", label="分类筛选",
-                    info="韦伯著述 / 传记与介绍 / 思想研究与讨论 / 相关史料",
+                    choices=categories[1:], value=[], label="分类筛选",
+                    info="韦伯著述 / 传记与介绍 / 思想研究与讨论 / 相关史料（可多选，空 = 全部）",
+                    multiselect=True,
                 )
                 exc_dd = gr.Dropdown(
                     choices=sources[1:], value=[], label="屏蔽来源",

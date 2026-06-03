@@ -147,8 +147,8 @@ def format_context(sections: list[dict], chunks: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def search_only(query: str, embed_model, category_filter: str | None = None,
-                source_filter: str | None = None,
+def search_only(query: str, embed_model, category_filter: str | list[str] | None = None,
+                source_filter: str | list[str] | None = None,
                 source_exclude: str | None = None,
                 collection_filter: str | None = None,
                 collection_exclude: str | None = None) -> str:
@@ -210,8 +210,8 @@ def search_only(query: str, embed_model, category_filter: str | None = None,
     return ""  # Already printed directly
 
 
-def answer_query(query: str, embed_model, category_filter: str | None = None,
-                 source_filter: str | None = None,
+def answer_query(query: str, embed_model, category_filter: str | list[str] | None = None,
+                 source_filter: str | list[str] | None = None,
                  source_exclude: str | None = None,
                  collection_filter: str | None = None,
                  collection_exclude: str | None = None) -> str:
@@ -283,8 +283,8 @@ def _get_llm_client() -> OpenAI:
 
 
 def answer_query_with_history(query: str, embed_model,
-                               category_filter: str | None = None,
-                               source_filter: str | None = None,
+                               category_filter: str | list[str] | None = None,
+                               source_filter: str | list[str] | None = None,
                                source_exclude: str | None = None,
                                collection_filter: str | None = None,
                                collection_exclude: str | None = None):
@@ -330,8 +330,8 @@ def answer_query_with_history(query: str, embed_model,
 
 
 def follow_up(query: str, history: list[dict], embed_model,
-              category_filter: str | None = None,
-              source_filter: str | None = None,
+              category_filter: str | list[str] | None = None,
+              source_filter: str | list[str] | None = None,
               source_exclude: str | None = None,
               collection_filter: str | None = None,
               collection_exclude: str | None = None):
@@ -376,11 +376,11 @@ def main():
     parser.add_argument("query", nargs="?", help="Search query (if not using --interactive)")
     parser.add_argument("--interactive", "-i", action="store_true",
                         help="Interactive mode")
-    parser.add_argument("--category", "-c", default=None,
+    parser.add_argument("--category", "-c", default=None, action="append",
                         choices=config.CATEGORIES,
-                        help="Filter by source category")
-    parser.add_argument("--source", "-s", default=None,
-                        help="Filter by book name (fuzzy match)")
+                        help="Filter by source category (repeatable: -c A -c B)")
+    parser.add_argument("--source", "-s", default=None, action="append",
+                        help="Filter by book name, fuzzy match (repeatable: -s A -s B)")
     parser.add_argument("--exclude", "-e", default=None,
                         help="Exclude a book by name (fuzzy match)")
     parser.add_argument("--collection", "-C", default=None,
@@ -429,7 +429,7 @@ def main():
     collection_exclude = None
     try:
         if args.source:
-            source_filter = resolve_book_name(args.source)
+            source_filter = [resolve_book_name(s) for s in args.source]
         if args.exclude:
             source_exclude = resolve_book_name(args.exclude)
         if args.collection:
@@ -439,6 +439,9 @@ def main():
     except ValueError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
+
+    # args.category from action="append" is already a list of valid values
+    category_filter = args.category  # list[str] | None
 
     print(f"Loading embedding model ({config.EMBEDDING_MODEL})...", file=sys.stderr)
     embed_model = create_embedding_model()
@@ -454,13 +457,13 @@ def main():
         def _show_filters():
             parts = []
             if cat_filter:
-                parts.append(f"类别: {cat_filter}")
+                parts.append(f"类别: {'、'.join(cat_filter) if isinstance(cat_filter, list) else cat_filter}")
             if col_filter:
                 parts.append(f"合集: {col_filter}")
             if col_exc:
                 parts.append(f"排除合集: {col_exc}")
             if src_filter:
-                parts.append(f"书: {src_filter}")
+                parts.append(f"书: {'、'.join(src_filter) if isinstance(src_filter, list) else src_filter}")
             if exc_filter:
                 parts.append(f"排除书: {exc_filter}")
             print(f"过滤: {', '.join(parts) if parts else '无'}", file=sys.stderr)

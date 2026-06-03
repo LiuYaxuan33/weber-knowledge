@@ -22,16 +22,20 @@ def load_source(source: dict) -> list[dict]:
     """Load a single source, returning list of sections."""
     path = source["path"]
     stype = source["type"]
-    edition = source["edition"]
+    publisher = source["publisher"] or ""
     category = source["category"]
+    year = source.get("year")
+    author = source.get("author", "")
 
-    print(f"  Loading [{edition}] {source['name']}...", end=" ", flush=True)
+    print(f"  Loading [{publisher}] {source['name']}...", end=" ", flush=True)
     t0 = time.time()
 
     if stype == "epub":
-        sections = load_epub(path, edition, category, source["name"])
+        sections = load_epub(path, publisher, category, source["name"], year=year, author=author)
     elif stype == "markdown":
-        sections = load_markdown(path, edition, category, source["name"])
+        sections = load_markdown(path, publisher, category, source["name"],
+                                 year=year, author=author,
+                                 book_title=source.get("title", ""))
     else:
         print(f"UNKNOWN TYPE: {stype}")
         return []
@@ -45,7 +49,7 @@ def get_ingested_sources() -> set[str]:
     """Return set of source_name values already in the sections collection.
 
     Backward-compatible: if no records have source_name (old ingest), falls
-    back to checking editions and mapping them to source names via config.
+    back to checking publishers and mapping them to source names via config.
     """
     try:
         sec_coll, _ = get_collections()
@@ -53,7 +57,7 @@ def get_ingested_sources() -> set[str]:
             return set()
         result = sec_coll.get(include=["metadatas"])
         sources = set()
-        editions_found = set()
+        publishers_found = set()
         has_source_name = False
 
         for meta in result.get("metadatas", []):
@@ -62,13 +66,13 @@ def get_ingested_sources() -> set[str]:
             if "source_name" in meta and meta["source_name"]:
                 sources.add(meta["source_name"])
                 has_source_name = True
-            if "edition" in meta:
-                editions_found.add(meta["edition"])
+            if "publisher" in meta:
+                publishers_found.add(meta["publisher"])
 
-        # Fallback: old data without source_name — match editions to sources
-        if not has_source_name and editions_found:
+        # Fallback: old data without source_name — match publishers to sources
+        if not has_source_name and publishers_found:
             for src in config.SOURCES:
-                if src["edition"] in editions_found:
+                if src["publisher"] in publishers_found:
                     sources.add(src["name"])
 
         return sources
@@ -76,12 +80,12 @@ def get_ingested_sources() -> set[str]:
         return set()
 
 
-def build_edition_source_map() -> dict[str, str]:
-    """Build {edition: source_name} mapping from config."""
+def build_publisher_source_map() -> dict[str, str]:
+    """Build {publisher: source_name} mapping from config (for backward compat)."""
     mapping = {}
     for src in config.SOURCES:
-        if src["edition"] not in mapping:
-            mapping[src["edition"]] = src["name"]
+        if src["publisher"] and src["publisher"] not in mapping:
+            mapping[src["publisher"]] = src["name"]
     return mapping
 
 
@@ -106,7 +110,7 @@ def main():
         return
 
     if args.repair:
-        source_map = build_edition_source_map()
+        source_map = build_publisher_source_map()
         print(f"Repairing with mapping: {source_map}")
         n = repair_source_names(source_map)
         print(f"Updated {n} records with source_name.")

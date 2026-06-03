@@ -1,8 +1,9 @@
 import re
 
 
-def load_markdown(md_path: str, edition: str, category: str,
-                   source_name: str = "") -> list[dict]:
+def load_markdown(md_path: str, publisher: str, category: str,
+                   source_name: str = "", year: int | None = None,
+                   author: str = "", book_title: str = "") -> list[dict]:
     """Load a markdown file and split into sections by ## headings.
 
     Consecutive sections with the same chapter name (from page-break markers)
@@ -24,7 +25,7 @@ def load_markdown(md_path: str, edition: str, category: str,
         raw_sections.append({
             "text": front,
             "chapter": "前言",
-            "section_id": _make_section_id(edition, "front_matter"),
+            "section_id": _make_section_id(source_name or publisher, "front_matter"),
         })
 
     for part in parts[1:]:
@@ -41,7 +42,7 @@ def load_markdown(md_path: str, edition: str, category: str,
         raw_sections.append({
             "text": content,
             "chapter": heading,
-            "section_id": _make_section_id(edition, heading),
+            "section_id": _make_section_id(source_name or publisher, heading),
         })
 
     # Merge consecutive sections with the same chapter name
@@ -54,26 +55,39 @@ def load_markdown(md_path: str, edition: str, category: str,
 
     # Rebuild section_ids to ensure uniqueness after merging
     results = []
+    seen_ids = set()
     chapter_counts = {}
     for sec in merged:
         ch = sec["chapter"]
         chapter_counts[ch] = chapter_counts.get(ch, 0) + 1
-        sid = _make_section_id(edition, f"{ch}_{chapter_counts[ch]}")
+        sid = _make_section_id(source_name or publisher, f"{ch}_{chapter_counts[ch]}")
+
+        # Guarantee uniqueness: append counter if collision (can happen when
+        # chapter names differ only in Unicode variants that get normalized away)
+        if sid in seen_ids:
+            dedup_i = 2
+            while f"{sid}__{dedup_i}" in seen_ids:
+                dedup_i += 1
+            sid = f"{sid}__{dedup_i}"
+        seen_ids.add(sid)
 
         results.append({
             "text": sec["text"],
             "metadata": {
                 "section_id": sid,
-                "book": "马克斯·韦伯的生平、著述及影响",
+                "book": book_title or "马克斯·韦伯的生平、著述及影响",
                 "chapter": ch,
                 "level": 1,
-                "edition": edition,
+                "publisher": publisher,
+                "author": author,
                 "source_category": category,
                 "source_name": source_name,
                 "chunk_size": 512,
                 "chunk_overlap": 128,
             },
         })
+        if year is not None:
+            results[-1]["metadata"]["year"] = str(year)
 
     return results
 
@@ -89,7 +103,13 @@ def _extract_main_title(text: str) -> str:
     return m.group(1).strip() if m else "前言"
 
 
-def _make_section_id(edition: str, heading: str) -> str:
+def _make_section_id(prefix: str, heading: str) -> str:
     safe = re.sub(r'[^a-zA-Z0-9一-鿿_\-]', '_', heading)
     safe = re.sub(r'_+', '_', safe)
-    return f"{edition}_{safe[:60]}"
+    safe = safe.strip('_')
+    # Truncate to leave room for prefix and separator (ChromaDB ID limit is large
+    # but keep it reasonable; 200 chars total is plenty for uniqueness)
+    max_heading_len = 200 - len(prefix) - 1
+    if len(safe) > max_heading_len:
+        safe = safe[:max_heading_len]
+    return f"{prefix}_{safe}"

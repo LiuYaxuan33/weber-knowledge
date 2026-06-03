@@ -50,7 +50,7 @@ def delete_source(source_name: str) -> int:
     sec_coll, chk_coll = get_collections()
     total = 0
 
-    # Try source_name first (new data), then fall back to edition field
+    # Try source_name first (new data), then fall back to publisher field
     for coll in [sec_coll, chk_coll]:
         if coll.count() == 0:
             continue
@@ -59,8 +59,8 @@ def delete_source(source_name: str) -> int:
         metas = sample.get("metadatas", [])
         if metas and metas[0] and "source_name" in metas[0]:
             coll.delete(where={"source_name": source_name})
-        elif metas and metas[0] and "edition" in metas[0]:
-            coll.delete(where={"edition": source_name})
+        elif metas and metas[0] and "publisher" in metas[0]:
+            coll.delete(where={"publisher": source_name})
         total += coll.count()  # approximate after delete
 
     return total
@@ -129,13 +129,52 @@ def _batch_upsert(coll, ids, embeddings, documents, metadatas, batch_size=5000):
         )
 
 
+def _build_where(source_filter: str | None = None,
+                 source_exclude: str | None = None,
+                 category_filter: str | None = None,
+                 collection_filter: str | None = None,
+                 collection_exclude: str | None = None,
+                 extra: dict | None = None) -> dict | None:
+    """Build a ChromaDB where clause from optional filters.
+
+    All string values use exact match ($eq / $ne).
+    source_filter/exclude match against 'book' field.
+    collection_filter/exclude match against 'source_name' field.
+    """
+    conditions = []
+    if category_filter:
+        conditions.append({"source_category": category_filter})
+    if source_filter:
+        conditions.append({"source_name": source_filter})
+    if source_exclude:
+        conditions.append({"source_name": {"$ne": source_exclude}})
+    if collection_filter:
+        conditions.append({"source_name": collection_filter})
+    if collection_exclude:
+        conditions.append({"source_name": {"$ne": collection_exclude}})
+    if extra:
+        conditions.append(extra)
+
+    if not conditions:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
+
+
 def search_sections(query_embedding: list[float], n_results: int = 4,
-                    category_filter: str | None = None) -> list[dict]:
+                    category_filter: str | None = None,
+                    source_filter: str | None = None,
+                    source_exclude: str | None = None,
+                    collection_filter: str | None = None,
+                    collection_exclude: str | None = None) -> list[dict]:
     """Stage 1: find top-K relevant sections."""
     coll, _ = get_collections()
-    where = None
-    if category_filter:
-        where = {"source_category": category_filter}
+    where = _build_where(source_filter=source_filter,
+                         source_exclude=source_exclude,
+                         category_filter=category_filter,
+                         collection_filter=collection_filter,
+                         collection_exclude=collection_exclude)
 
     result = coll.query(
         query_embeddings=[query_embedding],
@@ -147,12 +186,20 @@ def search_sections(query_embedding: list[float], n_results: int = 4,
 
 
 def search_chunks(query_embedding: list[float], section_ids: list[str],
-                  n_results: int = 6, category_filter: str | None = None) -> list[dict]:
+                  n_results: int = 6, category_filter: str | None = None,
+                  source_filter: str | None = None,
+                  source_exclude: str | None = None,
+                  collection_filter: str | None = None,
+                  collection_exclude: str | None = None) -> list[dict]:
     """Stage 2: find top-K chunks within selected sections."""
     _, coll = get_collections()
-    where = {"section_id": {"$in": section_ids}}
-    if category_filter:
-        where["source_category"] = category_filter
+    extra = {"section_id": {"$in": section_ids}}
+    where = _build_where(source_filter=source_filter,
+                         source_exclude=source_exclude,
+                         category_filter=category_filter,
+                         collection_filter=collection_filter,
+                         collection_exclude=collection_exclude,
+                         extra=extra)
 
     result = coll.query(
         query_embeddings=[query_embedding],
@@ -165,13 +212,23 @@ def search_chunks(query_embedding: list[float], section_ids: list[str],
 
 def hierarchical_search(query_embedding: list[float],
                         top_sections: int = 4, top_chunks: int = 6,
-                        category_filter: str | None = None) -> tuple[list[dict], list[dict]]:
+                        category_filter: str | None = None,
+                        source_filter: str | None = None,
+                        source_exclude: str | None = None,
+                        collection_filter: str | None = None,
+                        collection_exclude: str | None = None,
+                        query_text: str = "") -> tuple[list[dict], list[dict]]:
     """Two-stage hierarchical retrieval.
 
     Returns (section_results, chunk_results).
+    query_text is used for cross-language bonus detection.
     """
     sections = search_sections(query_embedding, n_results=top_sections,
-                               category_filter=category_filter)
+                               category_filter=category_filter,
+                               source_filter=source_filter,
+                               source_exclude=source_exclude,
+                               collection_filter=collection_filter,
+                               collection_exclude=collection_exclude)
     if not sections:
         return [], []
 
@@ -180,7 +237,30 @@ def hierarchical_search(query_embedding: list[float],
         return sections, []
 
     chunks = search_chunks(query_embedding, section_ids, n_results=top_chunks,
-                           category_filter=category_filter)
+                           category_filter=category_filter,
+                           source_filter=source_filter,
+                           source_exclude=source_exclude,
+                           collection_filter=collection_filter,
+                           collection_exclude=collection_exclude)
+
+    # Diversity bonus: boost top-1 chunk per source by 0.1
+    seen_sources = {}
+    for c in chunks:
+        src = c["metadata"].get("source_name", "")
+        if src and src not in seen_sources:
+            seen_sources[src] = True
+            c["distance"] = max(0, c["distance"] - 0.1)
+
+    # Cross-language bonus: boost chunks in a different language from the query
+    # (embedding similarity is artificially lower across languages)
+    query_is_cjk = _is_cjk(query_text) if query_text else False
+    for c in chunks:
+        chunk_is_cjk = _is_cjk(c.get("text", "")[:200])
+        if query_is_cjk != chunk_is_cjk:
+            c["distance"] = max(0, c["distance"] - 0.05)
+
+    chunks.sort(key=lambda c: c["distance"])
+
     return sections, chunks
 
 
@@ -196,16 +276,84 @@ def collection_stats() -> dict:
         return {"sections": 0, "chunks": 0}
 
 
+def list_book_names(min_chunks: int = 0) -> list[str]:
+    """Return sorted unique book names from the chunks collection.
+
+    Args:
+        min_chunks: filter out books with fewer chunks than this threshold.
+                    Default 0 = return all.
+    """
+    _, coll = get_collections()
+    total = coll.count()
+    if total == 0:
+        return []
+    counts: dict[str, int] = {}
+    batch = 5000
+    for offset in range(0, total, batch):
+        result = coll.get(limit=batch, offset=offset, include=["metadatas"])
+        for m in result.get("metadatas", []):
+            if m and m.get("book"):
+                book = m["book"]
+                counts[book] = counts.get(book, 0) + 1
+    return sorted(b for b, c in counts.items() if c >= min_chunks)
+
+
+def list_sources_grouped(min_chunks: int = 0) -> list[dict]:
+    """Return books grouped by parent source, with chunk counts.
+
+    Returns list of dicts, each representing a parent source with its sub-books:
+        [{"source_name": str, "publisher": str, "books": [{"book": str, "chunks": int}]}]
+
+    Args:
+        min_chunks: filter out books with fewer chunks than this threshold.
+    """
+    _, coll = get_collections()
+    total = coll.count()
+    if total == 0:
+        return []
+    # source_name -> {book -> {chunks, publisher}}
+    groups: dict[str, dict] = {}
+    batch = 5000
+    for offset in range(0, total, batch):
+        result = coll.get(limit=batch, offset=offset, include=["metadatas"])
+        for m in result.get("metadatas", []):
+            if not m or not m.get("book"):
+                continue
+            src = m.get("source_name", "未知来源")
+            book = m["book"]
+            publisher = m.get("publisher", "?")
+            if src not in groups:
+                groups[src] = {"publisher": publisher, "books": {}}
+            if book not in groups[src]["books"]:
+                groups[src]["books"][book] = 0
+            groups[src]["books"][book] += 1
+
+    # Build result, filter and sort
+    output = []
+    for src in sorted(groups.keys()):
+        info = groups[src]
+        books = [{"book": b, "chunks": c}
+                 for b, c in sorted(info["books"].items(), key=lambda x: -x[1])
+                 if c >= min_chunks]
+        if books:
+            output.append({
+                "source_name": src,
+                "publisher": info["publisher"],
+                "books": books,
+            })
+    return output
+
+
 def repair_source_names(source_map: dict[str, str]) -> int:
     """Add source_name to existing metadatas that lack it.
 
-    source_map: {edition: source_name} — built from config.SOURCES.
+    source_map: {publisher: source_name} — built from config.SOURCES.
     Returns number of records updated.
     """
     sec_coll, chk_coll = get_collections()
     updated = 0
 
-    for coll, name in [(sec_coll, "sections"), (chk_coll, "chunks")]:
+    for coll in [sec_coll, chk_coll]:
         if coll.count() == 0:
             continue
         result = coll.get(include=["metadatas"])
@@ -216,21 +364,20 @@ def repair_source_names(source_map: dict[str, str]) -> int:
         fix_metas = []
         for id_, meta in zip(ids, metadatas):
             if meta and "source_name" not in meta:
-                edition = meta.get("edition", "")
-                if edition in source_map:
+                publisher = meta.get("publisher", "")
+                if publisher in source_map:
                     new_meta = dict(meta)
-                    new_meta["source_name"] = source_map[edition]
+                    new_meta["source_name"] = source_map[publisher]
                     fix_ids.append(id_)
                     fix_metas.append(new_meta)
 
         if fix_ids:
-            # We need to upsert with all required fields
             coll.update(ids=fix_ids, metadatas=fix_metas)
             updated += len(fix_ids)
 
     return updated
 def _format_results(result: dict) -> list[dict]:
-    """Convert ChromaDB query result to list of dicts."""
+    """Convert ChromaDB query result to list of dicts, filtering front matter."""
     if not result["ids"] or not result["ids"][0]:
         return []
 
@@ -241,10 +388,41 @@ def _format_results(result: dict) -> list[dict]:
     dists = result["distances"][0] if result["distances"] else [0] * len(ids)
 
     for i in range(len(ids)):
+        meta = metas[i] or {}
+        chapter = meta.get("chapter", "")
+        if _is_front_matter(chapter):
+            continue
         formatted.append({
             "id": ids[i],
             "text": docs[i],
-            "metadata": metas[i],
+            "metadata": meta,
             "distance": dists[i],
         })
     return formatted
+
+
+_FRONT_MATTER_PATTERNS = [
+    "前言", "序言", "序", "目录", "版权", "出版前言", "内容简介",
+    "英文版权页", "图字", "索引", "人名索引", "缩略语",
+    "Title Page", "Copyright", "Contents", "Foreword", "Preface",
+    "Notes", "Frontispiece", "Original Copyright", "Original Title",
+    "附录", "后记", "编后记", "译后记",
+]
+
+
+def _is_front_matter(chapter: str) -> bool:
+    """Check if a chapter name looks like front/back matter to skip."""
+    if not chapter:
+        return False
+    for pat in _FRONT_MATTER_PATTERNS:
+        if pat in chapter:
+            return True
+    return False
+
+
+def _is_cjk(text: str) -> bool:
+    """Heuristic: does the text contain mostly CJK characters?"""
+    if not text:
+        return False
+    cjk = sum(1 for c in text if '一' <= c <= '鿿')
+    return cjk > len(text) * 0.15

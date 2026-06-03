@@ -21,7 +21,29 @@
       "Bash(/c/Users/32783/Anaconda3/python ingest.py)",
       "Bash(/c/Users/32783/Anaconda3/python -X utf8 -c ' *)",
       "Bash(/c/Users/32783/Anaconda3/python *)",
-      "Bash(git commit -m 'feat: full publisher names, incremental ingest, bge-m3 batch control, backward compat *)"
+      "Bash(git commit -m 'feat: full publisher names, incremental ingest, bge-m3 batch control, backward compat *)",
+      "Bash(HF_HUB_OFFLINE=1 /c/Users/32783/Anaconda3/python ingest.py)",
+      "Bash(nvidia-smi *)",
+      "Bash(HF_HUB_OFFLINE=1 /c/Users/32783/Anaconda3/python ingest.py --force)",
+      "Bash(git commit *)",
+      "Bash(HF_HUB_OFFLINE=1 /c/Users/32783/Anaconda3/python ingest.py --stats)",
+      "Bash(iconv -f gbk -t utf-8)",
+      "Bash(HF_HUB_OFFLINE=1 /c/Users/32783/Anaconda3/python -c ' *)",
+      "Bash(echo \"---EXIT: $?\")",
+      "Bash(tasklist)",
+      "Bash(export PYTHONIOENCODING=utf-8)",
+      "Bash(tasklist /v)",
+      "Bash(wmic process *)",
+      "Bash(taskkill /PID 19444 /F)",
+      "Bash(cmd *)",
+      "Bash(marker-single *)",
+      "Bash(marker_single *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(marker D:\\\\weber_project\\\\weber-knowledge\\\\资料原档\\\\思想研究与讨论\\\\难以驯化的利维坦_陈涛_2026 *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 clean_and_merge.py)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('query.py', doraise=True\\); print\\('Syntax OK'\\)\")"
     ]
   }
 }

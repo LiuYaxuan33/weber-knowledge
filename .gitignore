@@ -4,6 +4,9 @@
 # ChromaDB data (rebuild with ingest.py)
 weber-rag/data/chroma_db/
 
+# Source files (large, not for GitHub)
+资料原档/
+
 # Python
 __pycache__/
 *.pyc

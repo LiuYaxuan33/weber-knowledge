@@ -8,11 +8,13 @@ This is a personal research collection of materials related to **Max Weber** (�
 
 ## Contents
 
-- **`三联-韦伯作品集.epub`** — Weber's collected works, 生活·读书·新知三联书店 edition
-- **`上人社-韦伯作品集.epub`** — Weber's collected works, 上海人民出版社 edition (ISBN 9787563345267)
-- **`马克斯·韦伯 - 2018 - 民族国家与经济政策：修订译本.epub`** — *The Nation State and Economic Policy*, 生活·读书·新知三联书店 (ISBN 9787108062185)
-- **`马克斯·韦伯 - 2022 - 社会科学方法论文集.epub`** — Collected essays on social science methodology, 上海人民出版社 (ISBN 9787208179035)
-- **`迪尔克·克斯勒 - 2004 - 马克斯·韦伯的生平、著述及影响/`** — Dirk Käsler's *Max Weber: Eine Einführung in Leben, Werk und Wirkung* (Chinese translation by 郭锋, published by 法律出版社, 2000). Full text in Markdown + extracted figures (JPEGs at repo root)
+Source files are organized under `资料原档/`:
+- **`资料原档/著述/上海人民出版社-韦伯作品集/`** — 7 EPUBs, 上海人民出版社 edition
+- **`资料原档/著述/上海三联书店-韦伯作品集/`** — 11 EPUBs, 上海三联书店（理想国）edition
+- **`资料原档/著述/`** — 1 EPUB (三联-民族国家与经济政策)
+- **`资料原档/传记与介绍/`** — 3 EPUBs + 2 Markdown (Käsler, Kaube, Mommsen, Bendix, Mommsen & Osterhammel)
+- **`资料原档/思想研究与讨论/`** — 4 EPUBs + 1 PDF set (难以驯化的利维坦, 陈涛 2026, marker OCR → markdown, 4/8 chapters done)
+- **`资料原档/史料/`** — 1 EPUB (新编剑桥世界近代史 第11–12卷)
 
 ## Python environment
 
@@ -47,8 +49,9 @@ python ingest.py --repair           # fix old data lacking source_name
 # Query
 python query.py "韦伯如何定义'理想类型'？"
 python query.py -i                      # interactive mode (supports follow-ups)
-python query.py -c "韦伯著述" "新教伦理"    # filter by category
-python query.py --list-categories       # show categories and index stats
+python query.py -s "学术与政治" "..."     # filter by source name (fuzzy match)
+python query.py -c "韦伯著述" "..."       # filter by category
+python query.py --list-sources           # show sources and chunk counts
 python query.py --top-sections 6 --top-chunks 10 "..."  # override retrieval depth
 
 # Interactive mode: /new to reset conversation, quit to exit
@@ -59,13 +62,14 @@ python query.py --top-sections 6 --top-chunks 10 "..."  # override retrieval dep
 - **Publisher names use FULL names** (not abbreviations):
   - `生活·读书·新知三联书店` (not "三联" — ambiguous with 上海三联)
   - `上海人民出版社` (not "上人社")
+  - `上海三联书店` (for 理想国 series)
   - `法律出版社` (Käsler biography publisher)
-- **bge-m3 model**: ~2GB, downloads to `D:\huggingface_cache\`. `HF_HUB_OFFLINE=1` is set automatically in `embeddings.py` — no manual env var needed for ingest or query.
-- **GPU VRAM**: RTX 4060 Laptop 8GB. `EMBEDDING_BATCH_SIZE=3` is the max safe value (~7.3GB used). Default (32) OOMs. Monitor with `nvidia-smi`.
-- **Incremental ingest**: `get_ingested_sources()` checks `source_name` metadata. If missing (old data), falls back to matching `edition` against `SOURCES` config. Run `--repair` once after first ingest with new code to populate `source_name`.
-- **--delete**: Remove a single source without touching others: `python ingest.py --delete SRC`. No need to `--force` nuke the whole DB.
-- **Source ordering**: SOURCES in `config.py` are ordered small→large so quick wins finish first. Keep this order when adding new books.
-- **EPUB parser**: `loaders/epub.py` splits TOC entries sharing the same HTML file by detecting sibling section boundaries. If texts appear duplicated or too large, check `_build_file_index` / `_extract_section_text`.
+- **bge-m3 model**: ~2GB, downloads to `D:\huggingface_cache\`. `HF_HUB_OFFLINE=1` is set automatically in `embeddings.py`.
+- **GPU VRAM**: RTX 4060 Laptop 8GB. `EMBEDDING_BATCH_SIZE=3` is the max safe value (~4.4GB used with single process). Default (32) OOMs. **Only run one ingest process at a time** — two processes = two bge-m3 models in VRAM = OOM.
+- **Incremental ingest**: `get_ingested_sources()` checks `source_name` metadata. To re-ingest a single source: `--delete SRC` then `python ingest.py`.
+- **Source ordering**: SOURCES in `config.py` are ordered small→large so quick wins finish first.
+- **EPUB parser** (`loaders/epub.py`): Uses NCX fragment anchors (`#sigil_toc_id_1`) for precise section boundary detection when available, falls back to text matching with full-width→half-width normalization. For books with broken TOCs (image-only pages), scans all HTML files directly. See "EPUB loader architecture" below.
+- **终端中文乱码**: Windows GBK terminal + Python UTF-8. Always use `export PYTHONIOENCODING=utf-8` before Python commands.
 
 ### Architecture
 
@@ -90,25 +94,61 @@ The **chunker** (`chunker.py`) splits Chinese text at natural boundaries with th
 
 **Retrieval** (`store.py` → `hierarchical_search()`):
 1. Embed user query
-2. Stage 1: `search_sections()` — find top-K chapters by cosine similarity, optionally filtered by `source_category`
+2. Stage 1: `search_sections()` — find top-K chapters by cosine similarity
 3. Stage 2: `search_chunks()` — search within those chapters' `section_id`s for the most relevant paragraphs
-4. Returns both section and chunk results for context assembly
+4. Post-processing:
+   - **Front matter filter**: `_is_front_matter()` skips chapters matching patterns like "前言", "目录", "Title Page", "Contents", "索引", etc. Add patterns to `_FRONT_MATTER_PATTERNS` in `store.py`.
+   - **Diversity bonus**: top-1 chunk per source gets +0.1 score boost to prevent single-book dominance
+   - **Cross-language bonus**: chunks in a different language from the query get +0.05 boost (CJK vs non-CJK detection via `_is_cjk()`)
+5. Returns (section_results, chunk_results)
+
+**Filter flags** (`--list-sources`, `-s`, `-c`):
+- `-s <name>` — filter by `source_name` (config entry name). Uses fuzzy matching via `resolve_book_name()`.
+- `-c <name>` — filter by `source_category` (韦伯著述, 传记与介绍, etc.)
+- `--list-sources` — show all sources grouped, with chunk counts
 
 **Query** (`query.py`):
 1. Retrieve sections + chunks
-2. Format into a structured reference block (chapters section, paragraphs section)
-3. Send to LLM with a SYSTEM_PROMPT that instructs it to act as a Weber expert, cite sources, and acknowledge gaps
-4. Append a source summary to the response
-5. Interactive mode (`-i`): maintains conversation history for follow-up questions. First question triggers full RAG retrieval; follow-ups re-retrieve with new query but include prior chat context. Use `/new` to reset.
+2. Format into a structured reference block using `_format_source()`: `书：《title》 | 章节：chapter | 出版社：publisher year`
+3. Send to LLM with SYSTEM_PROMPT (act as Weber expert, cite sources with `[书名, 章节名, 出版社]` format, acknowledge gaps)
+4. Append reference list using book titles (not internal IDs): `《book》 chapter（publisher）`
+5. Interactive mode (`-i`): `/new` to reset, `/source <name>` to filter, `/exclude <name>` to exclude
+
+### EPUB loader architecture
+
+`loaders/epub.py` extracts structured text from EPUBs. Key design:
+
+1. **TOC parsing** (`_parse_ncx`): Parses NCX (EPUB2) or NAV (EPUB3) into a tree of `{title, href, level, children}`.
+
+2. **HTML extraction** (`_extract_html`): Converts HTML to clean text. **Anchor marker insertion**: for each HTML element with an `id` attribute, inserts a marker (`ANCHOR{id}ANCHOR`) into the text. Markers are located after extraction and removed, giving us `{file: {anchor_id: text_position}}` maps.
+
+3. **Section splitting** (`_extract_section_text`): When multiple TOC entries share one HTML file, splits the document at anchor positions. Priority: NCX fragment anchor → text match with normalization → full doc fallback. Returns `""` for child entries that can't be split (avoids content duplication).
+
+4. **Text matching fallback** (`_text_search`): Tries exact match → char normalization (full-width `　：（）` → half-width ` :()`) → footnote-stripped match. Only used when anchors are unavailable.
+
+5. **Fallback HTML scan** (`_fallback_html_scan`): When TOC produces 0 sections (e.g., TOC points to image-only pages), scans all HTML files directly. Skips front matter (版权页, 目录, etc.) and image pages (< 500 chars). Detects volume boundaries by CIP page markers. Skips index pages (`first_line.startswith('索引')`).
+
+### Common pitfalls when adding EPUBs
+
+- **Full-width vs half-width**: NCX titles often use half-width spaces ` ` while body text uses full-width `　`. The normalizer handles this, but if a new EPUB shows content overlap, check `_char_normalize`.
+- **"Same page" anchors**: Some EPUBs have multiple TOC entries sharing one anchor (parent without fragment + child with unique fragment). This is handled correctly — the child's anchor splits the file.
+- **Broken TOC**: If `_parse_ncx` returns 0 useful entries, the fallback HTML scanner kicks in. Check `_fallback_html_scan`'s SKIP_IF_CONTAINS list if chapters are missing.
+- **TOC entries with empty hrefs**: Children sometimes have `href=""`. These get skipped by `_get_text_for_entry`.
+
+### Common pitfalls when adding markdown files
+
+- **Appendix/TOC-style content must not use `##` headings.** The markdown loader splits on all `## ` headings. If an appendix is a table-of-contents or outline (like 陈涛-《难以驯化的利维坦》's appendices), its internal structure must use `**...**` (bold) or plain text — NOT `##`/`###`/`####`. Otherwise each `##` creates a bogus tiny section. If the appendices are just reference material (not substantive content), consider deleting them from the file entirely.
+- **Verify section count after ingest.** A single book should have roughly chapters+1 sections. If `python ingest.py --stats` shows an abnormally high count, check the headings with `grep "^##" <file>`.
 
 ### Adding new books
 
-1. Add entry to `SOURCES` list in `config.py` with `type` (`epub` or `markdown`), `category`, and `edition`
+1. Add entry to `SOURCES` list in `config.py` with required fields: `name`, `type`, `path`, `category`, `author`, `title`, `publisher` (optional: `year`, `translator`, `isbn`)
 2. Run `python ingest.py` (incremental — only the new book will be processed)
+3. If the new book shows unexpected word counts or 0 sections, debug with the loaders directly
 
 ### Source categories
 
 - `韦伯著述` — Weber's own writings
-- `传记与介绍` — Biography/introductions (Käsler)
-- `相关史料` — Historical materials (future)
-- `思想研究与讨论` — Research/discussion (future)
+- `传记与介绍` — Biography/introductions
+- `相关史料` — Historical materials
+- `思想研究与讨论` — Research/discussion

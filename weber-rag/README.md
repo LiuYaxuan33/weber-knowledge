@@ -1,6 +1,6 @@
 # Weber RAG 知识库
 
-基于向量检索 + LLM 的马克斯·韦伯著作问答系统。
+基于向量检索 + LLM 的马克斯·韦伯（Max Weber, 1864–1920）著作问答系统。
 
 ## 架构
 
@@ -12,275 +12,260 @@ Source files (EPUB/Markdown)
         → 查询 → 分层检索 → LLM 生成回答
 ```
 
-- **Embedding**: `BAAI/bge-m3`（本地运行，~2GB，首次自动下载到 `D:\huggingface_cache\`）
-- **Vector DB**: ChromaDB，两层集合 — `weber_sections`（章节级）和 `weber_chunks`（段落级）
+- **Embedding**: `BAAI/bge-m3` — 本地运行，多语言，1024 维。首次自动下载（~2GB），之后离线可用
+- **Vector DB**: ChromaDB，两个集合 — `weber_sections`（章节级）和 `weber_chunks`（段落级），余弦相似度
 - **LLM**: DeepSeek Chat API
-- **分层检索**:
-  1. Stage 1: 找到 Top-K 相关章节
-  2. Stage 2: 在这些章节内找到最相关的段落
+- **分层检索**: Stage 1 找 Top-K 相关章节 → Stage 2 在这些章节内找最相关段落 → 去重 + 多样性排序
 
 ## 快速开始
 
-### 新电脑（从 git clone 开始）
+### 新电脑（git clone 后首次）
 
 ```bash
-# 一键安装
-bash setup.sh        # Mac / Linux / Git Bash
+setup.bat            # Windows CMD，按提示输入 DeepSeek API Key
 # 或
-setup.bat            # Windows CMD
+bash setup.sh        # Mac / Linux / Git Bash
 ```
 
-`setup.sh` 自动完成：检查 Python → 配置 `.env`（提示输入 API Key）→ 安装依赖 → 从分片文件重建向量库。
+`setup` 自动完成：检查 Python → 配置 `.env` → 安装依赖 → 从分片文件重建向量库。**无需 GPU，无需源文件，无需运行 ingest。**
 
-### 已有完整环境（仅更新代码）
-
-```bash
-git pull
-python ingest.py     # 增量索引（如有新增来源）
-```
-
-### Web 界面（推荐）
+### 日常使用
 
 ```bash
-python app.py                  # 浏览器打开 http://127.0.0.1:7860
-python app.py --port 8080      # 自定义端口
-```
+# Web 界面（推荐）
+python app.py                    # 浏览器打开 http://127.0.0.1:7860
+python app.py --port 8080        # 自定义端口
 
-界面提供：
-- 聊天式问答（支持多轮追问）
-- 左侧筛选：按来源/分类过滤
-- 「仅搜索」模式：只检索不调用 LLM（不消耗 API）
-- 输入 `/new` 重置对话
-
-### 终端查询
-
-```bash
+# 终端单次查询
 python query.py "韦伯如何定义'理想类型'？"
-python query.py -i              # 交互模式（支持追问）
+
+# 终端交互模式
+python query.py -i
 ```
 
-## 可移植数据
+### Web 界面功能
 
-向量数据库（ChromaDB）已预先构建并导出为分片文件，新电脑无需运行 `ingest.py`。
+- 聊天式问答，支持多轮追问（自动保留对话上下文）
+- 左侧筛选面板：按来源/分类过滤，一键切换
+- 「仅搜索」模式：只检索不调 LLM（不消耗 API token）
+- 输入 `/new` 重置对话
+- 点击示例问题快速开始
 
-### 从源机器导出
-
-```bash
-python export_data.py --split 50   # 生成 data/weber_data.npz + .part* 分片
-git add data/weber_data.npz.part*
-git commit -m "Update vector data"
-```
-
-### 在新机器上导入
-
-`setup.sh` 自动处理。手动操作：
-
-```bash
-python import_data.py             # 从 .npz 或分片重建 chroma_db
-python import_data.py --force     # 覆盖已有数据
-```
-
-## 查询
+## 使用指南
 
 ### 基本查询
 
 ```bash
-python query.py "新教伦理与资本主义精神的核心论点是什么？"
+python query.py "新教伦理与资本主义精神的核心论点"
 ```
 
-### 按来源过滤
+### 过滤
 
 ```bash
-# 限定在某本书中搜索
-python query.py --source "学术与政治" "什么是Klarheit？"
-python query.py -s "新教伦理" "天职概念"
-
-# 排除某本书
-python query.py --exclude "宗教社会学" "魔鬼"
-python query.py -e "经济与社会" "官僚制"
-
-# 按大类筛选
-python query.py --category "韦伯著述" "理想类型"
+# 按分类
+python query.py -c "韦伯著述" "理想类型"
 python query.py -c "传记与介绍" "韦伯生平"
 
-# 按合集搜索（父子来源）
-python query.py --collection "三联-韦伯作品集" "卡里斯玛"
-python query.py -C "社会科学方法论文集" "价值无涉"
-python query.py -E "上人社-韦伯作品集" "新教伦理"  # 排除整个合集
+# 按书（模糊匹配）
+python query.py -s "学术与政治" "Klarheit"
+python query.py -s "新教伦理" "天职概念"
 
-# 组合使用
-python query.py -c "韦伯著述" -C "三联" -s "学术与政治" "价值中立"
+# 按合集
+python query.py -C "上海三联" "卡里斯玛"
+
+# 排除
+python query.py -e "宗教社会学" "魔鬼"
+
+# 组合
+python query.py -c "韦伯著述" -C "上海三联" -s "支配社会学" "卡里斯玛权威"
 ```
 
-### 查看可用的过滤选项
+### 查看可用来源
 
 ```bash
-python query.py --list-sources     # 按来源分组列出书名（自动过滤前后附页）
-python query.py --list-sources --show-all  # 含目录、译者说明等附页
-python query.py --list-categories   # 列出分类和索引统计
+python query.py --list-sources               # 按合集分组列出所有书
+python query.py --list-sources --show-all    # 含目录/附页
+python query.py --list-categories            # 列出分类
 ```
-
-`--list-sources` 会按父来源（EPUB 合集）分组显示，并自动隐藏少于 30 段的前后附页（目录、译者说明等）。
 
 ### 交互模式
 
 ```bash
-python query.py -i
-
-# 带初始过滤启动
-python query.py -i -s "学术与政治"
-python query.py -i -c "韦伯著述" -e "经济与社会"
+python query.py -i                    # 启动交互模式
+python query.py -i -c "韦伯著述"      # 带初始过滤
 ```
 
-交互模式下，第一问触发完整 RAG 检索；后续追问会重新检索，同时保留对话历史。
+交互模式支持 `/source`、`/exclude`、`/category`、`/new` 等命令。详见 [COMMANDS.md](COMMANDS.md)。
 
-**会话内命令：**
+### 仅搜索模式
 
-| 命令 | 说明 | 示例 |
-|------|------|------|
-| `/source <书名>` | 限定搜索范围（模糊匹配） | `/source 学术与政治` |
-| `/s <书名>` | 同上（短写） | `/s 新教伦理` |
-| `/exclude <书名>` | 排除指定书（模糊匹配） | `/exclude 宗教社会学` |
-| `/e <书名>` | 同上（短写） | `/e 经济与社会` |
-| `/collection <合集>` | 限定到整个合集 | `/collection 三联` |
-| `/col <合集>` | 同上（短写） | `/col 上人社` |
-| `/exclude-collection <合集>` | 排除整个合集 | `/ecol 民族国家` |
-| `/category <分类>` | 按分类筛选 | `/category 韦伯著述` |
-| `/c <分类>` | 同上（短写） | `/c 传记与介绍` |
-| `/filters` | 查看当前过滤条件 | |
-| `/filter off` | 关闭所有过滤 | |
-| `/new` | 重置对话历史 | |
-| `quit` / `exit` | 退出 | |
-
-书名参数支持与 `--source`/`--exclude` 相同的模糊匹配规则。切换过滤条件时对话历史会自动重置，因为上下文范围发生了变化。
+```bash
+python query.py -S "理想类型"    # 只检索，跳过 LLM
+```
+Web 界面中勾选「仅搜索」开关即可。
 
 ### 调整检索深度
 
 ```bash
-python query.py --top-sections 10 --top-chunks 15 "韦伯的方法论"
+python query.py --top-sections 10 --top-chunks 15 "方法论"
 ```
 
-## 索引管理
+## 数据管理
+
+### 索引管理
 
 ```bash
-# 增量索引（只处理新来源）
-python ingest.py
-
-# 查看当前状态
-python ingest.py --stats
-
-# 添加/重新索引单个来源
-python ingest.py --add SRC_NAME
-
-# 删除单个来源（不重建 DB）
-python ingest.py --delete SRC_NAME
-
-# 完全重建
-python ingest.py --force
-
-# 修复旧数据的 source_name 字段
-python ingest.py --repair
+python ingest.py                  # 增量索引（只处理新来源）
+python ingest.py --stats          # 查看当前状态
+python ingest.py --add SRC        # 重新索引指定来源
+python ingest.py --delete SRC     # 删除指定来源
+python ingest.py --force          # 清空重建
+python ingest.py --repair         # 修复旧数据的 source_name 字段
 ```
+
+### 可移植数据
+
+向量库已预构建为分片文件（~189MB，4×50MB），随 git 分发。新电脑无需运行 `ingest.py`。
+
+**源机器导出**（每次更新向量库后）：
+
+```bash
+python export_data.py --split 50     # → data/weber_data.npz + 4 个 .part* 分片
+git add data/weber_data.npz.part*
+git commit -m "Update vector data"
+git push
+```
+
+**新机器导入**（`setup` 自动调用）：
+
+```bash
+python import_data.py                # 从 .npz 或 .part* 分片重建 chroma_db
+python import_data.py --force        # 覆盖已有数据
+```
+
+### 添加新著作
+
+1. 将文件放入 `资料原档/` 对应目录
+2. 在 `config.py` 的 `SOURCES` 列表添加条目（必填：`name`、`type`、`path`、`category`、`author`、`title`、`publisher`）
+3. 运行 `python ingest.py`（增量索引，只处理新书）
+4. 运行 `python export_data.py --split 50` 更新分片数据
 
 ## 来源列表
 
-| 书名 | 类型 | 分类 | 出版社 |
-|------|------|------|--------|
-| 经济与社会（第1卷） | EPUB | 韦伯著述 | 上海人民出版社 |
-| 经济与社会（第2卷） | EPUB | 韦伯著述 | 上海人民出版社 |
-| 新教伦理与资本主义精神 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 学术与政治 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 支配社会学 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 宗教社会学 宗教与世界 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 法律社会学 非正当性的支配 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 经济与历史 支配的类型 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 中国的宗教：儒教与道教 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 印度的宗教：印度教与佛教 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 社会学的基本概念；经济行动与社会团体 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 民族国家与经济政策 | EPUB | 韦伯著述 | 生活·读书·新知三联书店 |
-| 社会科学方法论文集 | EPUB | 韦伯著述 | 上海人民出版社 |
-| 克斯勒-韦伯生平著述及影响 | Markdown | 传记与介绍 | 法律出版社 |
+共 **26 个来源**，分 4 个分类。
+
+### 韦伯著述（19 个）
+
+| 书名 | 出版社 | 年份 |
+|------|--------|------|
+| 学术与政治 | 上海人民出版社 | 2021 |
+| 新教伦理与资本主义精神 | 上海人民出版社 | 2019 |
+| 罗雪尔与克尼斯：历史经济学的逻辑问题 | 上海人民出版社 | 2020 |
+| 批判施塔姆勒 | 上海人民出版社 | 2020 |
+| 韦伯政治著作选 | 上海人民出版社 | — |
+| 社会科学方法论文集 | 上海人民出版社 | 2022 |
+| 经济与社会 | 上海人民出版社 | 2020 |
+| 学术与政治 | 上海三联书店 | 2010 |
+| 新教伦理与资本主义精神 | 上海三联书店 | 2019 |
+| 社会学的基本概念·经济行动与社会团体 | 上海三联书店 | 2020 |
+| 支配社会学 | 上海三联书店 | 2020 |
+| 经济与历史 支配的类型 | 上海三联书店 | 2021 |
+| 法律社会学 非正当性的支配 | 上海三联书店 | 2021 |
+| 宗教社会学 宗教与世界 | 上海三联书店 | — |
+| 中国的宗教：儒教与道教 | 上海三联书店 | 2020 |
+| 印度的宗教：印度教与佛教 | 上海三联书店 | 2020 |
+| 古犹太教 | 上海三联书店 | 2021 |
+| 民族国家与经济政策 | 生活·读书·新知三联书店 | 2018 |
+
+### 传记与介绍（5 个）
+
+| 书名 | 作者 | 出版社 |
+|------|------|--------|
+| 马克斯·韦伯的生平、著述及影响 | 克斯勒 | 法律出版社 |
+| 马克斯·韦伯：跨越时代的人生 | 考伯 | 社会科学文献出版社 |
+| 马克斯·韦伯与德国政治：1890—1920 | 蒙森 | 中信出版社 |
+| 马克斯·韦伯思想肖像 | 本迪克斯 | — |
+| Max Weber and His Contemporaries | Mommsen & Osterhammel | Routledge |
+
+### 思想研究与讨论（5 个）
+
+| 书名 | 作者 | 出版社 |
+|------|------|--------|
+| 科学作为天职：韦伯与我们时代的命运 | 韦伯 等 / 李猛 编 | 生活·读书·新知三联书店 |
+| 难以驯化的利维坦 | 陈涛 | 生活·读书·新知三联书店 |
+| Max Weber: From History to Modernity | Bryan S. Turner | Taylor & Francis |
+| Max Weber and Karl Marx | Karl Löwith | Taylor & Francis |
+| Natural Right and History | Leo Strauss | University of Chicago Press |
+
+### 相关史料（1 个）
+
+| 书名 | 出版社 |
+|------|--------|
+| 新编剑桥世界近代史（第 11–12 卷） | 中国社会科学出版社 |
 
 ### 书名模糊匹配
 
-`--source` 和 `--exclude` 支持模糊匹配，解析规则为：
+过滤参数（`-s`、`-e`、`-C`、`-E`）支持模糊匹配，解析优先级：
 
 1. **精确匹配**（忽略大小写）
-2. **子串匹配**：`"新教伦理"` → `"新教伦理与资本主义精神"`
-3. **相似匹配**（通过 difflib）：如果都不匹配，列出最接近的书名
-4. **歧义提示**：如果匹配到多个，列出候选项让你选
+2. **子串匹配** — `"新教伦理"` → `新教伦理与资本主义精神`
+3. **相似匹配**（difflib） — 列出最接近候选项
+4. **歧义提示** — 匹配到多个时列出让你选
 
 ## 配置
 
-所有参数在 `config.py` 中调整：
+`config.py` 中所有可调参数：
 
 ```python
 # 检索
-TOP_SECTIONS = 10       # Stage 1: 检索章节数
-TOP_CHUNKS = 15         # Stage 2: 检索段落数（受 section 范围限制）
+TOP_SECTIONS = 10        # Stage 1: 检索章节数
+TOP_CHUNKS = 15          # Stage 2: 检索段落数
 
 # 分块
-CHUNK_SIZE = 512        # 每块中文字符数
-CHUNK_OVERLAP = 128     # 相邻块重叠字符数
+CHUNK_SIZE = 512         # 每块中文字符数
+CHUNK_OVERLAP = 128      # 相邻块重叠
 
 # 嵌入
 EMBEDDING_MODEL = "BAAI/bge-m3"
-EMBEDDING_BATCH_SIZE = 3   # GPU VRAM 限制（8GB 安全值）
-EMBEDDING_DEVICE = None    # None=自动，设为 "cpu" 强制 CPU
+EMBEDDING_DIM = 1024
+EMBEDDING_BATCH_SIZE = 3        # 8GB VRAM 安全值，更大显存可调高
+EMBEDDING_DEVICE = None         # None=自动，"cpu"=强制 CPU
 
 # LLM
 LLM_MODEL = "deepseek-chat"
 LLM_MAX_TOKENS = 8192
 LLM_TEMPERATURE = 0.1
+LLM_BASE_URL = "https://api.deepseek.com"
 ```
 
 ### 切换嵌入模型
 
 ```python
-# 更小的中文模型（~400MB）
-EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
-EMBEDDING_DIM = 512
-
-# OpenAI（需 API Key）
-EMBEDDING_MODEL = "openai:text-embedding-3-small"
+EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"   # 更小（~400MB），仅中文
+EMBEDDING_MODEL = "text-embedding-3-small"    # OpenAI（需 API Key）
 ```
 
-## 添加新著作
-
-1. 将文件放入项目根目录
-2. 在 `config.py` 的 `SOURCES` 列表添加条目：
-   ```python
-   {
-       "name": "新书名称",
-       "type": "epub",           # 或 "markdown"
-       "path": os.path.join(PROJECT_ROOT, "新书文件.epub"),
-       "category": "韦伯著述",    # 选择一个分类
-       "edition": "出版社全称",
-   }
-   ```
-3. 运行 `python ingest.py`（增量索引，只处理新书）
-
-### 分类
-
-- `韦伯著述` — Weber 本人的著作
-- `传记与介绍` — 传记和介绍性作品
-- `相关史料` — 历史材料（待添加）
-- `思想研究与讨论` — 研究和讨论（待添加）
+切换模型后需 `python ingest.py --force` 重建索引。
 
 ## 硬件要求
 
-- **GPU**: 8GB+ VRAM 推荐（RTX 4060 Laptop 8GB 测试通过）
-- **CPU**: 可以纯 CPU 运行（设置 `EMBEDDING_DEVICE = "cpu"`），但较慢
-- **磁盘**: 模型 ~2GB，ChromaDB 索引 ~500MB
-- **内存**: 8GB+ 推荐
+| 资源 | 最低 | 推荐 |
+|------|------|------|
+| GPU | 无（CPU 可运行） | 8GB+ VRAM |
+| 内存 | 8GB | 16GB |
+| 磁盘 | ~3GB（模型 2GB + 向量库 ~200MB + 源文件 73MB） | — |
+
+CPU 模式：在 `config.py` 设 `EMBEDDING_DEVICE = "cpu"`。
 
 ## 离线运行
 
-系统默认在加载 BGE-M3 模型时自动设置 `HF_HUB_OFFLINE=1`。模型首次下载后会缓存，后续查询无需联网即可完成向量检索。调用 DeepSeek API 生成回答仍需网络。
+系统在加载模型时自动设置 `HF_HUB_OFFLINE=1`。模型首次下载（需联网）后缓存到本地，后续查询的向量检索完全离线。调用 DeepSeek API 生成回答仍需网络。
 
 ## 注意事项
 
-- **出版社名使用全称**：`生活·读书·新知三联书店`（不是"三联"），`上海人民出版社`（不是"上人社"）
-- **bge-m3 模型**首次运行自动下载，约 2GB
-- **GPU VRAM 安全限制**：`EMBEDDING_BATCH_SIZE=3` 约用 7.3GB。增大需确认有足够显存
-- **增量索引**：依赖 `source_name` 元数据字段判断已索引来源。旧数据可能缺失此字段，用 `--repair` 修复
+- **出版社名使用全称**：`生活·读书·新知三联书店`（不是"三联"），`上海人民出版社`（不是"上人社"），`上海三联书店`（不是"三联"）
+- **bge-m3 模型** ~2GB，首次运行自动下载
+- **GPU VRAM**：`EMBEDDING_BATCH_SIZE=3` 约用 4.4GB（单进程）。不要同时跑两个 ingest 进程（两个模型实例 → OOM）
+- **增量索引**：依赖 `source_name` 元数据判断已索引来源。旧数据缺失此字段时用 `--repair` 修复
+- **Markdown 文件注意事项**：附录/TOC 类内容不要用 `##` 标题（markdown loader 会按 `##` 拆分段）。用 `**粗体**` 代替
+- **终端中文乱码**：Windows GBK 终端 + Python UTF-8，命令前加 `export PYTHONIOENCODING=utf-8`

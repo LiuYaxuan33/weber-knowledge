@@ -199,16 +199,22 @@ def build_ui():
     sources = [""] + [g["source_name"] for g in list_sources_grouped(min_chunks=0)]
     categories = [""] + config.CATEGORIES
 
-    with gr.Blocks(title="Weber 知识库") as demo:
+    css = """
+    .sidebar-column { overflow-y: auto !important; max-height: 100vh; }
+    .main-column { overflow: hidden !important; }
+    .chatbot-container { height: calc(100vh - 220px) !important; }
+    """
+
+    with gr.Blocks(title="Weber 知识库", fill_height=True, css=css) as demo:
         gr.Markdown("# Weber 知识库查询")
         gr.Markdown("基于马克斯·韦伯著作、传记与研究文献的 RAG 问答系统。")
 
         # Hidden LLM conversation state
         llm_state = gr.State(None)
 
-        with gr.Row():
+        with gr.Row(equal_height=True, fill_height=True):
             # ── Sidebar: filters ──
-            with gr.Column(scale=1, min_width=220):
+            with gr.Column(scale=1, min_width=220, elem_classes="sidebar-column"):
                 gr.Markdown("### 筛选条件")
                 src_dd = gr.Dropdown(
                     choices=sources[1:], value=[], label="来源筛选",
@@ -253,10 +259,10 @@ def build_ui():
                 )
 
             # ── Main: chat ──
-            with gr.Column(scale=3):
+            with gr.Column(scale=3, elem_classes="main-column", fill_height=True):
                 chatbot = gr.Chatbot(
                     value=[],
-                    height=550,
+                    elem_classes="chatbot-container",
                 )
                 msg_input = gr.Textbox(
                     placeholder="输入你的问题，按 Enter 发送（输入 /new 重置对话）...",

@@ -310,6 +310,7 @@ def main():
         server_port=args.port,
         share=args.share,
         theme=gr.themes.Soft(),
+        inbrowser=True,
     )
 
 

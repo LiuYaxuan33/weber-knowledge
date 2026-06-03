@@ -144,7 +144,7 @@ def _handle_chat(message: str, chat_history: list, llm_state,
                  search_mode: bool, src_filter: str, cat_filter: str):
     """Process one chat turn.
 
-    chat_history is list of (user_msg, bot_msg) tuples (Gradio 4.x format).
+    chat_history is list of {"role": "user"/"assistant", "content": "..."} dicts.
     llm_state is the LLM conversation message list, or None for fresh start.
 
     Returns: (updated_chat_history, empty_input, updated_llm_state)
@@ -158,29 +158,33 @@ def _handle_chat(message: str, chat_history: list, llm_state,
     # Handle / commands
     msg = message.strip()
     if msg in ("/new", "/clear"):
-        chat_history.append(("/new", "对话已重置。"))
+        chat_history.append({"role": "user", "content": "/new"})
+        chat_history.append({"role": "assistant", "content": "对话已重置。"})
         return chat_history, "", None
 
     if msg == "/help":
-        chat_history.append(("/help",
+        chat_history.append({"role": "user", "content": "/help"})
+        chat_history.append({"role": "assistant", "content":
             "**命令：**\n"
             "- `/new` — 开始新话题\n"
             "- 左侧可切换「仅搜索」模式和筛选条件\n"
             "- 修改筛选条件后建议 `/new` 重置对话"
-        ))
+        })
         return chat_history, "", llm_state
 
     if search_mode:
         answer = _do_search(message, source_filter=source,
                             category_filter=category)
-        chat_history.append((message, answer))
+        chat_history.append({"role": "user", "content": message})
+        chat_history.append({"role": "assistant", "content": answer})
         return chat_history, "", llm_state
     else:
         state = list(llm_state) if llm_state else []
         answer, new_state = _do_qa(message, state,
                                    source_filter=source,
                                    category_filter=category)
-        chat_history.append((message, answer))
+        chat_history.append({"role": "user", "content": message})
+        chat_history.append({"role": "assistant", "content": answer})
         return chat_history, "", new_state
 
 

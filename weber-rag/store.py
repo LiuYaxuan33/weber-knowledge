@@ -243,13 +243,13 @@ def hierarchical_search(query_embedding: list[float],
                            collection_filter=collection_filter,
                            collection_exclude=collection_exclude)
 
-    # Diversity bonus: boost top-1 chunk per source by 0.1
-    seen_sources = {}
+    # Diversity bonus: boost top-1 chunk per book by 0.15
+    seen_books = {}
     for c in chunks:
-        src = c["metadata"].get("source_name", "")
-        if src and src not in seen_sources:
-            seen_sources[src] = True
-            c["distance"] = max(0, c["distance"] - 0.1)
+        book = c["metadata"].get("book", "")
+        if book and book not in seen_books:
+            seen_books[book] = True
+            c["distance"] = max(0, c["distance"] - 0.15)
 
     # Cross-language bonus: boost chunks in a different language from the query
     # (embedding similarity is artificially lower across languages)
@@ -257,7 +257,7 @@ def hierarchical_search(query_embedding: list[float],
     for c in chunks:
         chunk_is_cjk = _is_cjk(c.get("text", "")[:200])
         if query_is_cjk != chunk_is_cjk:
-            c["distance"] = max(0, c["distance"] - 0.05)
+            c["distance"] = max(0, c["distance"] - 0.10)
 
     chunks.sort(key=lambda c: c["distance"])
 

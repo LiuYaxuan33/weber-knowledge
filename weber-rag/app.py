@@ -146,12 +146,13 @@ def _do_qa(query: str, history: list[dict],
 
 def _handle_chat(message: str, chat_history: list, llm_state,
                  search_mode: bool, src_filter: str, cat_filter: str,
-                 exc_filter: list):
-    """Process one chat turn.
-
-    Returns: (updated_chat_history, empty_input, updated_llm_state)
-    """
+                 exc_filter: list, div_bonus: float, lang_bonus: float):
+    """Process one chat turn."""
     _ensure_model()
+
+    # Update config with slider values (avoids threading through all functions)
+    config.DIVERSITY_BONUS = div_bonus
+    config.CROSS_LANG_BONUS = lang_bonus
 
     source = src_filter.strip() if src_filter else None
     category = cat_filter.strip() if cat_filter else None
@@ -274,15 +275,9 @@ def build_ui():
         msg_input.submit(
             fn=_handle_chat,
             inputs=[msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd,
-                    exc_dd],
+                    exc_dd, div_slider, lang_slider],
             outputs=[chatbot, msg_input, llm_state],
         )
-
-        # Sliders update config in-place, no need to pass through chat
-        div_slider.change(fn=lambda v: setattr(config, "DIVERSITY_BONUS", v),
-                          inputs=[div_slider])
-        lang_slider.change(fn=lambda v: setattr(config, "CROSS_LANG_BONUS", v),
-                           inputs=[lang_slider])
 
     return demo
 

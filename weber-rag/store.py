@@ -131,6 +131,7 @@ def _batch_upsert(coll, ids, embeddings, documents, metadatas, batch_size=5000):
 
 def _build_where(source_filter: str | None = None,
                  source_exclude: str | None = None,
+                 source_exclude_list: list[str] | None = None,
                  category_filter: str | None = None,
                  collection_filter: str | None = None,
                  collection_exclude: str | None = None,
@@ -140,6 +141,7 @@ def _build_where(source_filter: str | None = None,
     All string values use exact match ($eq / $ne).
     source_filter/exclude match against 'book' field.
     collection_filter/exclude match against 'source_name' field.
+    source_exclude_list: multiple source_name values to exclude.
     """
     conditions = []
     if category_filter:
@@ -148,6 +150,9 @@ def _build_where(source_filter: str | None = None,
         conditions.append({"source_name": source_filter})
     if source_exclude:
         conditions.append({"source_name": {"$ne": source_exclude}})
+    if source_exclude_list:
+        for name in source_exclude_list:
+            conditions.append({"source_name": {"$ne": name}})
     if collection_filter:
         conditions.append({"source_name": collection_filter})
     if collection_exclude:
@@ -166,12 +171,14 @@ def search_sections(query_embedding: list[float], n_results: int = 4,
                     category_filter: str | None = None,
                     source_filter: str | None = None,
                     source_exclude: str | None = None,
+                    source_exclude_list: list[str] | None = None,
                     collection_filter: str | None = None,
                     collection_exclude: str | None = None) -> list[dict]:
     """Stage 1: find top-K relevant sections."""
     coll, _ = get_collections()
     where = _build_where(source_filter=source_filter,
                          source_exclude=source_exclude,
+                         source_exclude_list=source_exclude_list,
                          category_filter=category_filter,
                          collection_filter=collection_filter,
                          collection_exclude=collection_exclude)
@@ -189,6 +196,7 @@ def search_chunks(query_embedding: list[float], section_ids: list[str],
                   n_results: int = 6, category_filter: str | None = None,
                   source_filter: str | None = None,
                   source_exclude: str | None = None,
+                  source_exclude_list: list[str] | None = None,
                   collection_filter: str | None = None,
                   collection_exclude: str | None = None) -> list[dict]:
     """Stage 2: find top-K chunks within selected sections."""
@@ -196,6 +204,7 @@ def search_chunks(query_embedding: list[float], section_ids: list[str],
     extra = {"section_id": {"$in": section_ids}}
     where = _build_where(source_filter=source_filter,
                          source_exclude=source_exclude,
+                         source_exclude_list=source_exclude_list,
                          category_filter=category_filter,
                          collection_filter=collection_filter,
                          collection_exclude=collection_exclude,
@@ -215,6 +224,7 @@ def hierarchical_search(query_embedding: list[float],
                         category_filter: str | None = None,
                         source_filter: str | None = None,
                         source_exclude: str | None = None,
+                        source_exclude_list: list[str] | None = None,
                         collection_filter: str | None = None,
                         collection_exclude: str | None = None,
                         query_text: str = "",
@@ -226,11 +236,13 @@ def hierarchical_search(query_embedding: list[float],
     query_text is used for cross-language bonus detection.
     diversity_bonus: score boost for the first chunk from each book (default 0.15).
     cross_lang_bonus: score boost for chunks in a different language (default 0.10).
+    source_exclude_list: multiple source_name values to exclude.
     """
     sections = search_sections(query_embedding, n_results=top_sections,
                                category_filter=category_filter,
                                source_filter=source_filter,
                                source_exclude=source_exclude,
+                               source_exclude_list=source_exclude_list,
                                collection_filter=collection_filter,
                                collection_exclude=collection_exclude)
     if not sections:
@@ -244,6 +256,7 @@ def hierarchical_search(query_embedding: list[float],
                            category_filter=category_filter,
                            source_filter=source_filter,
                            source_exclude=source_exclude,
+                           source_exclude_list=source_exclude_list,
                            collection_filter=collection_filter,
                            collection_exclude=collection_exclude)
 

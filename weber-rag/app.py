@@ -37,6 +37,7 @@ def _ensure_model():
 
 def _do_search(query: str, source_filter: str | None,
                category_filter: str | None,
+               source_exclude: list[str] | None = None,
                diversity_bonus: float = 0.15,
                cross_lang_bonus: float = 0.10) -> str:
     """Search-only: retrieve and format results, no LLM."""
@@ -51,6 +52,7 @@ def _do_search(query: str, source_filter: str | None,
         top_chunks=config.TOP_CHUNKS,
         category_filter=category_filter,
         source_filter=source_filter,
+        source_exclude_list=source_exclude,
         query_text=query,
         diversity_bonus=diversity_bonus,
         cross_lang_bonus=cross_lang_bonus,
@@ -92,6 +94,7 @@ def _do_search(query: str, source_filter: str | None,
 def _do_qa(query: str, history: list[dict],
            source_filter: str | None,
            category_filter: str | None,
+           source_exclude: list[str] | None = None,
            diversity_bonus: float = 0.15,
            cross_lang_bonus: float = 0.10) -> tuple[str, list[dict]]:
     """Full RAG + LLM Q&A. Returns (answer, new_history)."""
@@ -106,6 +109,7 @@ def _do_qa(query: str, history: list[dict],
         top_chunks=config.TOP_CHUNKS,
         category_filter=category_filter,
         source_filter=source_filter,
+        source_exclude_list=source_exclude,
         query_text=query,
         diversity_bonus=diversity_bonus,
         cross_lang_bonus=cross_lang_bonus,
@@ -150,12 +154,8 @@ def _do_qa(query: str, history: list[dict],
 
 def _handle_chat(message: str, chat_history: list, llm_state,
                  search_mode: bool, src_filter: str, cat_filter: str,
-                 div_bonus: float, lang_bonus: float):
+                 exc_filter: list, div_bonus: float, lang_bonus: float):
     """Process one chat turn.
-
-    chat_history is list of {"role": "user"/"assistant", "content": "..."} dicts.
-    llm_state is the LLM conversation message list, or None for fresh start.
-    div_bonus, lang_bonus: scoring boost parameters.
 
     Returns: (updated_chat_history, empty_input, updated_llm_state)
     """
@@ -163,6 +163,8 @@ def _handle_chat(message: str, chat_history: list, llm_state,
 
     source = src_filter.strip() if src_filter else None
     category = cat_filter.strip() if cat_filter else None
+    excludes = [e for e in (exc_filter or []) if e]  # Filter out empty strings
+    excludes = excludes if excludes else None
     chat_history = list(chat_history) if chat_history else []
 
     # Handle / commands
@@ -185,6 +187,7 @@ def _handle_chat(message: str, chat_history: list, llm_state,
     if search_mode:
         answer = _do_search(message, source_filter=source,
                             category_filter=category,
+                            source_exclude=excludes,
                             diversity_bonus=div_bonus,
                             cross_lang_bonus=lang_bonus)
         chat_history.append({"role": "user", "content": message})
@@ -195,6 +198,7 @@ def _handle_chat(message: str, chat_history: list, llm_state,
         answer, new_state = _do_qa(message, state,
                                    source_filter=source,
                                    category_filter=category,
+                                   source_exclude=excludes,
                                    diversity_bonus=div_bonus,
                                    cross_lang_bonus=lang_bonus)
         chat_history.append({"role": "user", "content": message})
@@ -225,6 +229,11 @@ def build_ui():
                 cat_dd = gr.Dropdown(
                     choices=categories, value="", label="分类筛选",
                     info="韦伯著述 / 传记与介绍 / 思想研究与讨论 / 相关史料",
+                )
+                exc_dd = gr.Dropdown(
+                    choices=sources[1:], value=[], label="屏蔽来源",
+                    info="选择不想搜索的书或合集（可多选）",
+                    multiselect=True,
                 )
                 search_toggle = gr.Checkbox(
                     value=False, label="仅搜索（跳过 LLM 问答）",
@@ -277,7 +286,7 @@ def build_ui():
         msg_input.submit(
             fn=_handle_chat,
             inputs=[msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd,
-                    div_slider, lang_slider],
+                    exc_dd, div_slider, lang_slider],
             outputs=[chatbot, msg_input, llm_state],
         )
 

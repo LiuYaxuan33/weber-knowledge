@@ -194,25 +194,27 @@ def _handle_chat(message: str, chat_history: list, llm_state,
         return chat_history, "", new_state
 
 
+# ── Custom CSS ────────────────────────────────────────────────────────────────
+CSS = """
+.sidebar-column { overflow-y: auto !important; max-height: 100vh; }
+.main-column { overflow: hidden !important; }
+.chatbot-container { height: calc(100vh - 220px) !important; }
+"""
+
+
 def build_ui():
     """Build and return the Gradio Blocks app."""
     sources = [""] + [g["source_name"] for g in list_sources_grouped(min_chunks=0)]
     categories = [""] + config.CATEGORIES
 
-    css = """
-    .sidebar-column { overflow-y: auto !important; max-height: 100vh; }
-    .main-column { overflow: hidden !important; }
-    .chatbot-container { height: calc(100vh - 220px) !important; }
-    """
-
-    with gr.Blocks(title="Weber 知识库", fill_height=True, css=css) as demo:
+    with gr.Blocks(title="Weber 知识库", fill_height=True) as demo:
         gr.Markdown("# Weber 知识库查询")
         gr.Markdown("基于马克斯·韦伯著作、传记与研究文献的 RAG 问答系统。")
 
         # Hidden LLM conversation state
         llm_state = gr.State(None)
 
-        with gr.Row(equal_height=True, fill_height=True):
+        with gr.Row(equal_height=True):
             # ── Sidebar: filters ──
             with gr.Column(scale=1, min_width=220, elem_classes="sidebar-column"):
                 gr.Markdown("### 筛选条件")
@@ -259,7 +261,7 @@ def build_ui():
                 )
 
             # ── Main: chat ──
-            with gr.Column(scale=3, elem_classes="main-column", fill_height=True):
+            with gr.Column(scale=3, elem_classes="main-column"):
                 chatbot = gr.Chatbot(
                     value=[],
                     elem_classes="chatbot-container",
@@ -311,6 +313,7 @@ def main():
         server_name=args.host,
         server_port=args.port,
         share=args.share,
+        css=CSS,
         theme=gr.themes.Soft(),
         inbrowser=True,
     )

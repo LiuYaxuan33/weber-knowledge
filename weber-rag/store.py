@@ -217,11 +217,15 @@ def hierarchical_search(query_embedding: list[float],
                         source_exclude: str | None = None,
                         collection_filter: str | None = None,
                         collection_exclude: str | None = None,
-                        query_text: str = "") -> tuple[list[dict], list[dict]]:
+                        query_text: str = "",
+                        diversity_bonus: float = 0.15,
+                        cross_lang_bonus: float = 0.10) -> tuple[list[dict], list[dict]]:
     """Two-stage hierarchical retrieval.
 
     Returns (section_results, chunk_results).
     query_text is used for cross-language bonus detection.
+    diversity_bonus: score boost for the first chunk from each book (default 0.15).
+    cross_lang_bonus: score boost for chunks in a different language (default 0.10).
     """
     sections = search_sections(query_embedding, n_results=top_sections,
                                category_filter=category_filter,
@@ -243,21 +247,23 @@ def hierarchical_search(query_embedding: list[float],
                            collection_filter=collection_filter,
                            collection_exclude=collection_exclude)
 
-    # Diversity bonus: boost top-1 chunk per book by 0.15
-    seen_books = {}
-    for c in chunks:
-        book = c["metadata"].get("book", "")
-        if book and book not in seen_books:
-            seen_books[book] = True
-            c["distance"] = max(0, c["distance"] - 0.15)
+    # Diversity bonus: boost top-1 chunk per book
+    if diversity_bonus > 0:
+        seen_books = {}
+        for c in chunks:
+            book = c["metadata"].get("book", "")
+            if book and book not in seen_books:
+                seen_books[book] = True
+                c["distance"] = max(0, c["distance"] - diversity_bonus)
 
     # Cross-language bonus: boost chunks in a different language from the query
     # (embedding similarity is artificially lower across languages)
-    query_is_cjk = _is_cjk(query_text) if query_text else False
-    for c in chunks:
-        chunk_is_cjk = _is_cjk(c.get("text", "")[:200])
-        if query_is_cjk != chunk_is_cjk:
-            c["distance"] = max(0, c["distance"] - 0.10)
+    if cross_lang_bonus > 0:
+        query_is_cjk = _is_cjk(query_text) if query_text else False
+        for c in chunks:
+            chunk_is_cjk = _is_cjk(c.get("text", "")[:200])
+            if query_is_cjk != chunk_is_cjk:
+                c["distance"] = max(0, c["distance"] - cross_lang_bonus)
 
     chunks.sort(key=lambda c: c["distance"])
 

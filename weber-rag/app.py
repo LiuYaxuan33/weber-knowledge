@@ -36,7 +36,9 @@ def _ensure_model():
 # ── Chat logic ───────────────────────────────────────────────────────────────
 
 def _do_search(query: str, source_filter: str | None,
-               category_filter: str | None) -> str:
+               category_filter: str | None,
+               diversity_bonus: float = 0.15,
+               cross_lang_bonus: float = 0.10) -> str:
     """Search-only: retrieve and format results, no LLM."""
     stats = collection_stats()
     if stats["chunks"] == 0:
@@ -50,6 +52,8 @@ def _do_search(query: str, source_filter: str | None,
         category_filter=category_filter,
         source_filter=source_filter,
         query_text=query,
+        diversity_bonus=diversity_bonus,
+        cross_lang_bonus=cross_lang_bonus,
     )
 
     if not sections and not chunks:
@@ -87,7 +91,9 @@ def _do_search(query: str, source_filter: str | None,
 
 def _do_qa(query: str, history: list[dict],
            source_filter: str | None,
-           category_filter: str | None) -> tuple[str, list[dict]]:
+           category_filter: str | None,
+           diversity_bonus: float = 0.15,
+           cross_lang_bonus: float = 0.10) -> tuple[str, list[dict]]:
     """Full RAG + LLM Q&A. Returns (answer, new_history)."""
     stats = collection_stats()
     if stats["chunks"] == 0:
@@ -101,6 +107,8 @@ def _do_qa(query: str, history: list[dict],
         category_filter=category_filter,
         source_filter=source_filter,
         query_text=query,
+        diversity_bonus=diversity_bonus,
+        cross_lang_bonus=cross_lang_bonus,
     )
 
     if not sections and not chunks:
@@ -141,11 +149,13 @@ def _do_qa(query: str, history: list[dict],
 # ── Gradio interface ─────────────────────────────────────────────────────────
 
 def _handle_chat(message: str, chat_history: list, llm_state,
-                 search_mode: bool, src_filter: str, cat_filter: str):
+                 search_mode: bool, src_filter: str, cat_filter: str,
+                 div_bonus: float, lang_bonus: float):
     """Process one chat turn.
 
     chat_history is list of {"role": "user"/"assistant", "content": "..."} dicts.
     llm_state is the LLM conversation message list, or None for fresh start.
+    div_bonus, lang_bonus: scoring boost parameters.
 
     Returns: (updated_chat_history, empty_input, updated_llm_state)
     """
@@ -174,7 +184,9 @@ def _handle_chat(message: str, chat_history: list, llm_state,
 
     if search_mode:
         answer = _do_search(message, source_filter=source,
-                            category_filter=category)
+                            category_filter=category,
+                            diversity_bonus=div_bonus,
+                            cross_lang_bonus=lang_bonus)
         chat_history.append({"role": "user", "content": message})
         chat_history.append({"role": "assistant", "content": answer})
         return chat_history, "", llm_state
@@ -182,7 +194,9 @@ def _handle_chat(message: str, chat_history: list, llm_state,
         state = list(llm_state) if llm_state else []
         answer, new_state = _do_qa(message, state,
                                    source_filter=source,
-                                   category_filter=category)
+                                   category_filter=category,
+                                   diversity_bonus=div_bonus,
+                                   cross_lang_bonus=lang_bonus)
         chat_history.append({"role": "user", "content": message})
         chat_history.append({"role": "assistant", "content": answer})
         return chat_history, "", new_state
@@ -215,6 +229,18 @@ def build_ui():
                 search_toggle = gr.Checkbox(
                     value=False, label="仅搜索（跳过 LLM 问答）",
                     info="开启后只检索不生成回答",
+                )
+
+                gr.Markdown("### 排序加权")
+                div_slider = gr.Slider(
+                    minimum=0, maximum=0.5, value=0.15, step=0.01,
+                    label="每本书首位加权",
+                    info="每本书第一个结果的匹配分数加成（0 = 关闭）",
+                )
+                lang_slider = gr.Slider(
+                    minimum=0, maximum=0.3, value=0.10, step=0.01,
+                    label="跨语言加权",
+                    info="不同语言结果的分数加成（0 = 关闭）",
                 )
 
                 gr.Markdown("---")
@@ -250,7 +276,8 @@ def build_ui():
         # ── Event handlers ──
         msg_input.submit(
             fn=_handle_chat,
-            inputs=[msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd],
+            inputs=[msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd,
+                    div_slider, lang_slider],
             outputs=[chatbot, msg_input, llm_state],
         )
 

@@ -7,10 +7,11 @@ from ebooklib import epub
 
 def load_epub(epub_path: str, publisher: str, category: str,
               source_name: str = "", year: int | None = None,
-              author: str = "") -> list[dict]:
+              author: str = "", book_title: str = "") -> list[dict]:
     """Load an EPUB and return a list of sections with metadata.
 
     Each section: {"text": str, "metadata": {"section_id": str, "book": str, ...}}
+    book_title is the actual book title from config (e.g., "学术与政治").
     """
     book = epub.read_epub(epub_path)
     toc = _parse_ncx(book)  # list of {title, href, level, children}
@@ -20,7 +21,7 @@ def load_epub(epub_path: str, publisher: str, category: str,
 
     sections = []
     _flatten_toc(toc, html_texts, sections, file_index, publisher, category,
-                 parent_book="", source_name=source_name,
+                 parent_book=book_title, source_name=source_name,
                  year=year, author=author,
                  anchor_positions=anchor_positions,
                  fragment_map=fragment_map)
@@ -29,7 +30,7 @@ def load_epub(epub_path: str, publisher: str, category: str,
     # pages), scan all HTML files and treat each as a chapter.
     if len(sections) == 0 and len(html_texts) > 0:
         sections = _fallback_html_scan(html_texts, publisher, category,
-                                        source_name, year, author)
+                                        source_name, year, author, book_title)
 
     return sections
 
@@ -218,10 +219,9 @@ def _flatten_toc(toc: list[dict], html_texts: dict[str, str],
         if not title:
             continue
 
-        # Determine book name
-        book_name = parent_book
-        if entry["level"] == 0 and not parent_book:
-            book_name = source_name or title
+        # Determine book name: use parent_book (actual book title from config)
+        # as the primary source. Fall back to source_name only if completely absent.
+        book_name = parent_book or source_name or title
 
         # Get text content for this entry
         text = _get_text_for_entry(entry, html_texts, file_index,
@@ -548,7 +548,8 @@ def _make_section_id(publisher: str, href: str) -> str:
 def _fallback_html_scan(html_texts: dict[str, str], publisher: str,
                           category: str, source_name: str = "",
                           year: int | None = None,
-                          author: str = "") -> list[dict]:
+                          author: str = "",
+                          book_title: str = "") -> list[dict]:
     """Fallback when TOC-based loading produces no sections.
 
     Scans all HTML files, skipping image-only pages and front matter,
@@ -564,7 +565,7 @@ def _fallback_html_scan(html_texts: dict[str, str], publisher: str,
 
     # Detect volumes: a second "图书在版编目" page marks vol.2
     volume = 1
-    vol_title = source_name
+    vol_title = book_title or source_name
 
     for file_key in sorted_keys:
         text = html_texts[file_key].strip()

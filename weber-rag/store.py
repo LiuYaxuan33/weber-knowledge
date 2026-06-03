@@ -259,13 +259,13 @@ def hierarchical_search(query_embedding: list[float],
                            collection_filter=collection_filter,
                            collection_exclude=collection_exclude)
 
-    # Diversity bonus: boost top-1 chunk per book
+    # Diversity bonus: boost top-1 chunk per source (book/collection)
     if div_bonus > 0:
-        seen_books = {}
+        seen_sources = {}
         for c in chunks:
-            book = c["metadata"].get("book", "")
-            if book and book not in seen_books:
-                seen_books[book] = True
+            src = c["metadata"].get("source_name", "")
+            if src and src not in seen_sources:
+                seen_sources[src] = True
                 c["distance"] = max(0, c["distance"] - div_bonus)
 
     # Cross-language bonus

@@ -31,7 +31,9 @@ def load_source(source: dict) -> list[dict]:
     t0 = time.time()
 
     if stype == "epub":
-        sections = load_epub(path, publisher, category, source["name"], year=year, author=author)
+        sections = load_epub(path, publisher, category, source["name"],
+                             year=year, author=author,
+                             book_title=source.get("title", ""))
     elif stype == "markdown":
         sections = load_markdown(path, publisher, category, source["name"],
                                  year=year, author=author,

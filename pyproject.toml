@@ -1,0 +1,13 @@
+[project]
+name = "weber-knowledge"
+version = "2.0.0"
+requires-python = ">=3.10,<3.14"
+
+[tool.pytest.ini_options]
+pythonpath = ["weber-rag"]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100

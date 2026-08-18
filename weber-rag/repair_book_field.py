@@ -55,6 +55,7 @@ def repair(apply: bool = False):
         if ids_to_fix:
             print(f"  {label}: {len(ids_to_fix)} records to fix "
                   f"(out of {total})")
+            fixed += len(ids_to_fix)
             if apply:
                 # Update in batches
                 for i in range(0, len(ids_to_fix), batch):
@@ -62,7 +63,6 @@ def repair(apply: bool = False):
                     coll.update(ids=ids_to_fix[i:end],
                                metadatas=metas_to_fix[i:end])
                 print(f"    -> fixed {len(ids_to_fix)} records")
-                fixed += len(ids_to_fix)
         else:
             print(f"  {label}: all {total} records already correct")
 

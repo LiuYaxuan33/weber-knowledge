@@ -3,5 +3,8 @@ data/chroma_db/
 data/weber_data.npz
 data/*.zip
 __pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
 .DS_Store
 Downloads/

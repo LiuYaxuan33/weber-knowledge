@@ -3,6 +3,7 @@ from urllib.parse import unquote
 from bs4 import BeautifulSoup
 import ebooklib
 from ebooklib import epub
+import config
 
 
 def load_epub(epub_path: str, publisher: str, category: str,
@@ -155,16 +156,31 @@ def _extract_html(book) -> tuple[dict[str, str], dict[str, dict[str, int]]]:
         text = re.sub(r'(\n\n)+', '\n\n', text)
         text = text.strip()
 
-        # 6. Find marker positions, then remove markers
+        # 6. Remove markers while recording positions in the *clean* text.
+        # Recording m.start() and removing all markers afterwards shifts every
+        # anchor after the first one and silently cuts sections mid-sentence.
         file_anchors = {}
-        for m in re.finditer(r'\n?ANCHOR\n?([^]+)ANCHOR\n?', text):
+        marker_pattern = re.compile(r'\n?ANCHOR\n?([^]+)ANCHOR\n?')
+        clean_parts = []
+        cursor = 0
+        clean_length = 0
+        for m in marker_pattern.finditer(text):
+            before_marker = text[cursor:m.start()]
+            clean_parts.append(before_marker)
+            clean_length += len(before_marker)
             anchor_id = m.group(1).strip()
-            pos = m.start()
-            file_anchors[anchor_id] = pos
+            file_anchors[anchor_id] = clean_length
+            cursor = m.end()
 
-        # Remove markers from text
-        text = re.sub(r'\n?ANCHOR\n?[^]+ANCHOR\n?', '', text)
-        text = text.strip()
+        clean_parts.append(text[cursor:])
+        clean_text = ''.join(clean_parts)
+        leading_trim = len(clean_text) - len(clean_text.lstrip())
+        if leading_trim:
+            file_anchors = {
+                anchor_id: max(0, position - leading_trim)
+                for anchor_id, position in file_anchors.items()
+            }
+        text = clean_text.strip()
 
         texts[name] = text
         if file_anchors:
@@ -250,8 +266,8 @@ def _flatten_toc(toc: list[dict], html_texts: dict[str, str],
             "source_category": category,
             "source_name": source_name,
             "href": entry["href"],
-            "chunk_size": 512,
-            "chunk_overlap": 128,
+            "chunk_size": config.CHUNK_SIZE,
+            "chunk_overlap": config.CHUNK_OVERLAP,
         }
         if year is not None:
             metadata["year"] = str(year)
@@ -284,22 +300,36 @@ def _get_text_for_entry(entry: dict, html_texts: dict[str, str],
         file_part = href
         fragment = None
 
-    doc_text = _find_html_text(file_part, html_texts)
-    if not doc_text:
+    resolved_file = _find_html_key(file_part, html_texts)
+    if resolved_file is None:
         return ""
+    doc_text = html_texts[resolved_file]
 
     if anchor_positions is None:
         anchor_positions = {}
     if fragment_map is None:
         fragment_map = {}
+    # TOC paths and ebooklib item names occasionally differ by a leading path
+    # or URL encoding. Make the resolved document's anchors available under
+    # the TOC key used by the section splitter.
+    if resolved_file != file_part and resolved_file in anchor_positions:
+        anchor_positions = dict(anchor_positions)
+        anchor_positions[file_part] = anchor_positions[resolved_file]
+
     return _extract_section_text(doc_text, entry, file_part, file_index,
                                  fragment, anchor_positions, fragment_map)
 
 
 def _find_html_text(file_part: str, html_texts: dict[str, str]) -> str:
     """Find HTML text by file path, trying variants (URL-encoded, basename, etc.)."""
+    key = _find_html_key(file_part, html_texts)
+    return html_texts[key] if key is not None else ""
+
+
+def _find_html_key(file_part: str, html_texts: dict[str, str]) -> str | None:
+    """Resolve a TOC href to the corresponding ebooklib document name."""
     if file_part in html_texts:
-        return html_texts[file_part]
+        return file_part
 
     # Strip leading path prefix and try both encoded / decoded basenames
     basename = file_part.split('/')[-1] if '/' in file_part else file_part
@@ -312,14 +342,14 @@ def _find_html_text(file_part: str, html_texts: dict[str, str]) -> str:
         key_basename = key.split('/')[-1] if '/' in key else key
         key_basename = key_basename.split('\\')[-1] if '\\' in key_basename else key_basename
         if basename_decoded == key_basename or basename == key_basename:
-            return html_texts[key]
+            return key
 
     # Last resort: try partial match
     for key in html_texts:
         if basename in key or key.endswith(file_part) or basename_decoded in key:
-            return html_texts[key]
+            return key
 
-    return ""
+    return None
 
 
 def _normalize_title(t: str) -> str:
@@ -614,8 +644,8 @@ def _fallback_html_scan(html_texts: dict[str, str], publisher: str,
                 "source_category": category,
                 "source_name": source_name,
                 "href": file_key,
-                "chunk_size": 512,
-                "chunk_overlap": 128,
+                "chunk_size": config.CHUNK_SIZE,
+                "chunk_overlap": config.CHUNK_OVERLAP,
             },
         })
         if year is not None:

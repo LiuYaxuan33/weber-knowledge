@@ -10,6 +10,9 @@ weber-rag/data/chroma_db/
 # Python
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
 
 # Windows
 *.lnk

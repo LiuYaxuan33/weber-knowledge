@@ -15,7 +15,7 @@ Source files (EPUB/Markdown)
 - **Embedding**: `BAAI/bge-m3` — 本地运行，多语言，1024 维。首次自动下载（~2GB），之后离线可用
 - **Vector DB**: ChromaDB，两个集合 — `weber_sections`（章节级）和 `weber_chunks`（段落级），余弦相似度
 - **LLM**: DeepSeek Chat API
-- **分层检索**: Stage 1 找 Top-K 相关章节 → Stage 2 在这些章节内找最相关段落 → 去重 + 多样性排序
+- **分层检索**: 章节向量由该章全部段落向量归一化汇总（不会截断长章节）；Stage 1 找 Top-K 章节 → Stage 2 在这些章节内找最相关段落 → 多样性排序
 
 ## 快速开始
 
@@ -27,7 +27,7 @@ setup.bat            # Windows CMD，按提示输入 DeepSeek API Key
 bash setup.sh        # Mac / Linux / Git Bash
 ```
 
-`setup` 自动完成：检查 Python → 配置 `.env` → 安装依赖 → 从分片文件重建向量库。**无需 GPU，无需源文件，无需运行 ingest。**
+`setup` 自动完成：创建独立 `.venv` → 配置 `.env` → 安装依赖 → 校验并从分片文件重建向量库。**无需 GPU，无需源文件，无需运行 ingest。** 首次查询会下载 bge-m3（约 2GB），之后可离线使用。
 
 ### 日常使用
 
@@ -125,7 +125,7 @@ python ingest.py --repair         # 修复旧数据的 source_name 字段
 
 ### 可移植数据
 
-向量库已预构建为分片文件（~189MB，4×50MB），随 git 分发。新电脑无需运行 `ingest.py`。
+向量库已预构建为分片文件（约 192MB，4 个分片），随 git 分发。新电脑无需运行 `ingest.py`。
 
 **源机器导出**（每次更新向量库后）：
 
@@ -152,9 +152,9 @@ python import_data.py --force        # 覆盖已有数据
 
 ## 来源列表
 
-共 **26 个来源**，分 4 个分类。
+共 **29 个来源**，分 4 个分类。
 
-### 韦伯著述（19 个）
+### 韦伯著述（18 个）
 
 | 书名 | 出版社 | 年份 |
 |------|--------|------|
@@ -259,7 +259,11 @@ CPU 模式：在 `config.py` 设 `EMBEDDING_DEVICE = "cpu"`。
 
 ## 离线运行
 
-系统在加载模型时自动设置 `HF_HUB_OFFLINE=1`。模型首次下载（需联网）后缓存到本地，后续查询的向量检索完全离线。调用 DeepSeek API 生成回答仍需网络。
+模型首次下载需要联网，之后 Hugging Face 会直接复用本地缓存。需要强制断网运行时，可设置 `HF_HUB_OFFLINE=1`；调用 DeepSeek API 生成回答仍需网络。
+
+## 在线使用
+
+根目录已提供 Dockerfile 和 GitHub Actions 工作流，可自动部署到仅账号本人可访问的私有 Hugging Face Space。配置方式见项目根目录的 [README](../README.md)。
 
 ## 注意事项
 

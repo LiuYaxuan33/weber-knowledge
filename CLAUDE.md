@@ -66,7 +66,7 @@ python query.py --top-sections 6 --top-chunks 10 "..."  # override retrieval dep
   - `上海人民出版社` (not "上人社")
   - `上海三联书店` (for 理想国 series)
   - `法律出版社` (Käsler biography publisher)
-- **bge-m3 model**: ~2GB, downloads to `D:\huggingface_cache\`. `HF_HUB_OFFLINE=1` is set automatically in `embeddings.py`.
+- **bge-m3 model**: ~2GB, downloads to the configured Hugging Face cache. Set `HF_HUB_OFFLINE=1` only when the model is already cached and forced offline operation is desired.
 - **GPU VRAM**: RTX 4060 Laptop 8GB. `EMBEDDING_BATCH_SIZE=3` is the max safe value (~4.4GB used with single process). Default (32) OOMs. **Only run one ingest process at a time** — two processes = two bge-m3 models in VRAM = OOM.
 - **Incremental ingest**: `get_ingested_sources()` checks `source_name` metadata. To re-ingest a single source: `--delete SRC` then `python ingest.py`.
 - **Source ordering**: SOURCES in `config.py` are ordered small→large so quick wins finish first.
@@ -85,15 +85,15 @@ python query.py --top-sections 6 --top-chunks 10 "..."  # override retrieval dep
 **Ingest pipeline** (`ingest.py`):
 ```
 Source files → Loader (load_epub / load_markdown) → sections[]
-  → embed each section via EmbeddingModel → add_sections() to ChromaDB
   → chunk each section via chunker → embed chunks → add_chunks() to ChromaDB
+  → pool all normalized chunk vectors per section → add_sections() to ChromaDB
 ```
 
 Loaders return a uniform `list[dict]` where each dict has `{"text": str, "metadata": {...}}`. The metadata dict must include `section_id`, `book`, `chapter`, `edition`, and `source_category` — these fields power retrieval filtering and citation formatting.
 
 The **chunker** (`chunker.py`) splits Chinese text at natural boundaries with this priority: paragraph break (`\n\n`) > sentence-ending punctuation (`。？！`) > clause boundary (`，；`) > hard character cutoff. Configurable via `CHUNK_SIZE`/`CHUNK_OVERLAP` in `config.py`.
 
-**Embedding model** (`embeddings.py`): Factory pattern via `create_embedding_model()`. Returns a subclass of the abstract `EmbeddingModel` — either `BGEM3Embedding` (local SentenceTransformer) or `OpenAIEmbedding` (API). Auto-falls back to local BGE if no OpenAI key is found.
+**Embedding model** (`embeddings.py`): Factory pattern via `create_embedding_model()`. Returns `BGEM3Embedding` (local SentenceTransformer) or `OpenAIEmbedding` (API). Missing provider credentials are explicit errors; never silently fall back to a different embedding space.
 
 **Retrieval** (`store.py` → `hierarchical_search()`):
 1. Embed user query

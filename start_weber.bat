@@ -1,6 +1,5 @@
 @echo off
 cd /d "%~dp0weber-rag"
-set HF_HUB_OFFLINE=1
 set PYTHONIOENCODING=utf-8
 
 echo ========================================
@@ -14,5 +13,11 @@ echo Press Ctrl+C to stop the server.
 echo ========================================
 echo.
 
-C:\Users\32783\Anaconda3\python.exe app.py
+if exist ".venv\Scripts\python.exe" (
+    ".venv\Scripts\python.exe" app.py
+) else if exist "C:\Users\32783\Anaconda3\python.exe" (
+    "C:\Users\32783\Anaconda3\python.exe" app.py
+) else (
+    python app.py
+)
 pause

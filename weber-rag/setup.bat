@@ -9,7 +9,7 @@ echo   Weber Knowledge Base — First Setup
 echo ========================================
 echo.
 
-REM 1. Check Python
+REM 1. Check Python and create an isolated environment
 echo [1/4] Checking Python...
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
@@ -18,13 +18,20 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 python --version
+if not exist ".venv\Scripts\python.exe" python -m venv .venv
+if not exist ".venv\Scripts\python.exe" (
+    echo ERROR: Failed to create .venv
+    pause
+    exit /b 1
+)
+set "PYTHON_BIN=.venv\Scripts\python.exe"
 echo.
 
 REM 2. Setup .env
 echo [2/4] Setting up .env...
 if exist .env (
-    findstr /c:"sk-" .env >nul 2>&1
-    if %errorlevel% equ 0 (
+    findstr /b /c:"DEEPSEEK_API_KEY=sk-" .env >nul 2>&1
+    if not errorlevel 1 (
         echo   .env already configured, skipping
         goto :deps
     )
@@ -36,7 +43,10 @@ echo   Get one at: https://platform.deepseek.com/api_keys
 echo.
 set /p API_KEY="  Enter your DEEPSEEK_API_KEY (or press Enter to skip): "
 if not "%API_KEY%"=="" (
-    powershell -Command "(Get-Content .env) -replace '^# DEEPSEEK_API_KEY=.*', 'DEEPSEEK_API_KEY=%API_KEY%' | Set-Content .env"
+    set "WEBER_SETUP_KEY=%API_KEY%"
+    "%PYTHON_BIN%" -c "import os,pathlib; p=pathlib.Path('.env'); lines=p.read_text(encoding='utf-8').splitlines(); key=os.environ['WEBER_SETUP_KEY']; p.write_text('\n'.join(('DEEPSEEK_API_KEY='+key) if x.startswith('# DEEPSEEK_API_KEY=') or x.startswith('DEEPSEEK_API_KEY=') else x for x in lines)+'\n',encoding='utf-8')"
+    set "WEBER_SETUP_KEY="
+    set "API_KEY="
     echo   API key saved to .env
 ) else (
     echo   Skipped. You can edit .env manually later.
@@ -47,7 +57,9 @@ echo.
 
 REM 3. Install dependencies
 echo [3/4] Installing Python dependencies...
-pip install -r requirements.txt -q
+"%PYTHON_BIN%" -m pip install --upgrade pip -q
+"%PYTHON_BIN%" -m pip install -r requirements.txt -q
+if %errorlevel% neq 0 exit /b 1
 echo   Done
 echo.
 
@@ -56,12 +68,12 @@ echo [4/4] Importing vector database...
 set NPZ_FILE=data\weber_data.npz
 
 if exist "%NPZ_FILE%" (
-    python import_data.py
+    "%PYTHON_BIN%" import_data.py
     goto :done
 )
 if exist "%NPZ_FILE%.part000" (
     echo   Found split parts, joining...
-    python import_data.py
+    "%PYTHON_BIN%" import_data.py
     goto :done
 )
 
@@ -76,7 +88,7 @@ echo     - ~2GB download for the bge-m3 embedding model
 echo     - A GPU with 8GB+ VRAM (or CPU with 16GB+ RAM)
 echo.
 set /p RUN_INGEST="  Run ingest now? (y/N): "
-if /i "%RUN_INGEST%"=="y" python ingest.py
+if /i "%RUN_INGEST%"=="y" "%PYTHON_BIN%" ingest.py
 
 :done
 echo.
@@ -84,8 +96,8 @@ echo ========================================
 echo   Setup complete!
 echo.
 echo   Quick start:
-echo     python app.py            Web chat interface (Gradio^)
-echo     python query.py -i       Terminal interactive mode
-echo     python query.py "问题"   Single question
+echo     .venv\Scripts\python.exe app.py            Web chat interface (Gradio^)
+echo     .venv\Scripts\python.exe query.py -i       Terminal interactive mode
+echo     .venv\Scripts\python.exe query.py "问题"   Single question
 echo ========================================
 pause

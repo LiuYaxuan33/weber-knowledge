@@ -1,0 +1,51 @@
+name: Deploy private Weber app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "README.md"
+      - "pyproject.toml"
+      - "requirements-dev.txt"
+      - "tests/**"
+      - "weber-rag/**"
+      - "scripts/deploy_hf_space.py"
+
+concurrency:
+  group: deploy-private-weber-space
+  cancel-in-progress: true
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            weber-rag/requirements.txt
+            requirements-dev.txt
+
+      - name: Install test and deployment dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pip install "huggingface_hub>=1,<2"
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Deploy private Docker Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python scripts/deploy_hf_space.py

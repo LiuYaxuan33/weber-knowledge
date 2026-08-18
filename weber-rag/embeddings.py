@@ -1,13 +1,18 @@
-import os
-# Must be set before any huggingface_hub import (inside SentenceTransformer)
-os.environ["HF_HUB_OFFLINE"] = "1"  # Force offline (model must be pre-downloaded)
-
 from abc import ABC, abstractmethod
-import numpy as np
+import os
+
+
+class EmbeddingConfigurationError(RuntimeError):
+    """Raised when the configured embedding provider cannot be initialized."""
 
 class EmbeddingModel(ABC):
+    @property
+    @abstractmethod
+    def model_name(self) -> str: ...
+
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
+
     @abstractmethod
     def embed_query(self, text: str) -> list[float]: ...
 
@@ -15,9 +20,18 @@ class EmbeddingModel(ABC):
 class OpenAIEmbedding(EmbeddingModel):
     def __init__(self, model: str = "text-embedding-3-small"):
         from openai import OpenAI
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key or api_key.startswith("your_"):
+            raise EmbeddingConfigurationError(
+                "OPENAI_API_KEY 未配置，无法使用 OpenAI 嵌入模型。"
+            )
         self.model = model
         self.client = OpenAI()
         self._dim = 1536
+
+    @property
+    def model_name(self) -> str:
+        return self.model
 
     @property
     def dim(self) -> int:
@@ -38,12 +52,22 @@ class OpenAIEmbedding(EmbeddingModel):
 
 class BGEM3Embedding(EmbeddingModel):
     def __init__(self, model_name: str = "BAAI/bge-m3"):
-        from sentence_transformers import SentenceTransformer
         import config
+        if config.HF_HUB_OFFLINE:
+            # Must be set before importing sentence_transformers/huggingface_hub.
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        from sentence_transformers import SentenceTransformer
+
+        self._model_name = model_name
         device = config.EMBEDDING_DEVICE or None
         self.model = SentenceTransformer(model_name, device=device)
         self._dim = self.model.get_embedding_dimension() or 512
         self._batch_size = getattr(config, 'EMBEDDING_BATCH_SIZE', 2)
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
     @property
     def dim(self) -> int:
@@ -67,13 +91,7 @@ class BGEM3Embedding(EmbeddingModel):
 
 def create_embedding_model(model_name: str | None = None) -> EmbeddingModel:
     import config
-    import os
     name = model_name or config.EMBEDDING_MODEL
     if name.startswith("text-embedding"):
-        if not os.environ.get("OPENAI_API_KEY") or os.environ["OPENAI_API_KEY"].startswith("your_"):
-            print("WARNING: No OpenAI API key found. Falling back to local BGE-small-zh.")
-            print("  Set OPENAI_API_KEY in .env to use OpenAI embeddings.")
-            return BGEM3Embedding("BAAI/bge-small-zh-v1.5")
         return OpenAIEmbedding(name)
-    else:
-        return BGEM3Embedding(name)
+    return BGEM3Embedding(name)

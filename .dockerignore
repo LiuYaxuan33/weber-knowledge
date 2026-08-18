@@ -1,0 +1,11 @@
+.git
+.claude
+资料原档
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+weber-rag/.env
+weber-rag/data/chroma_db
+weber-rag/data/weber_data.npz

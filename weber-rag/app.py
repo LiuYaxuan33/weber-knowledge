@@ -16,10 +16,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config
 from embeddings import create_embedding_model
-from store import hierarchical_search, collection_stats, list_sources_grouped
-from query import (
-    _format_source, format_context, _get_llm_client, SYSTEM_PROMPT,
-    resolve_book_name, resolve_collection_name,
+from store import collection_stats, list_sources_grouped
+from index_manifest import validate_index_compatibility
+from rag_service import (
+    RetrievalOptions,
+    answer_question,
+    format_search_results,
+    retrieve,
 )
 
 
@@ -31,115 +34,52 @@ def _ensure_model():
     global embed_model
     if embed_model is None:
         embed_model = create_embedding_model()
+        if collection_stats()["chunks"] > 0:
+            validate_index_compatibility(embed_model)
 
 
 # ── Chat logic ───────────────────────────────────────────────────────────────
 
 def _do_search(query: str, source_filter: list[str] | None,
                category_filter: list[str] | None,
-               source_exclude: list[str] | None = None) -> str:
+               source_exclude: list[str] | None = None,
+               diversity_bonus: float = config.DIVERSITY_BONUS,
+               cross_lang_bonus: float = config.CROSS_LANG_BONUS) -> str:
     """Search-only: retrieve and format results, no LLM."""
     stats = collection_stats()
     if stats["chunks"] == 0:
         return "知识库尚未索引。请先运行 `python setup.sh` 或 `python import_data.py`。"
 
-    q_emb = embed_model.embed_query(query)
-    sections, chunks = hierarchical_search(
-        q_emb,
-        top_sections=config.TOP_SECTIONS,
-        top_chunks=config.TOP_CHUNKS,
+    options = RetrievalOptions(
         category_filter=category_filter,
         source_filter=source_filter,
         source_exclude_list=source_exclude,
-        query_text=query,
+        diversity_bonus=diversity_bonus,
+        cross_lang_bonus=cross_lang_bonus,
     )
-
-    if not sections and not chunks:
-        return "未找到相关内容。"
-
-    lines = []
-    if sections:
-        lines.append("### 相关章节")
-        for i, s in enumerate(sections):
-            dist = s.get("distance")
-            score = f" [相似度: {1 - dist:.4f}]" if dist is not None else ""
-            lines.append(f"\n**{i+1}.{score}**")
-            lines.append(_format_source(s.get("metadata", {})))
-            lines.append(s["text"][:3000])
-
-    if chunks:
-        lines.append("\n### 相关段落")
-        for i, c in enumerate(chunks):
-            dist = c.get("distance")
-            score = f" [相似度: {1 - dist:.4f}]" if dist is not None else ""
-            lines.append(f"\n**{i+1}.{score}**")
-            lines.append(_format_source(c.get("metadata", {})))
-            lines.append(c["text"])
-
-    # Source summary
-    sources = set()
-    for item in (chunks or []) + (sections or []):
-        meta = item.get("metadata", {})
-        pub = meta.get("publisher", meta.get("edition", "?"))
-        sources.add(f"《{meta.get('book', '?')}》（{pub}）")
-
-    lines.append(f"\n---\n检索到 {len(sections)} 章节、{len(chunks)} 段落（来自 {len(sources)} 个来源）")
-    return "\n".join(lines)
+    sections, chunks = retrieve(query, embed_model, options)
+    return format_search_results(sections, chunks)
 
 
 def _do_qa(query: str, history: list[dict],
            source_filter: list[str] | None,
            category_filter: list[str] | None,
-           source_exclude: list[str] | None = None) -> tuple[str, list[dict]]:
+           source_exclude: list[str] | None = None,
+           diversity_bonus: float = config.DIVERSITY_BONUS,
+           cross_lang_bonus: float = config.CROSS_LANG_BONUS) -> tuple[str, list[dict]]:
     """Full RAG + LLM Q&A. Returns (answer, new_history)."""
     stats = collection_stats()
     if stats["chunks"] == 0:
         return "知识库尚未索引。请先运行 `python setup.sh` 或 `python import_data.py`。", history
 
-    q_emb = embed_model.embed_query(query)
-    sections, chunks = hierarchical_search(
-        q_emb,
-        top_sections=config.TOP_SECTIONS,
-        top_chunks=config.TOP_CHUNKS,
+    options = RetrievalOptions(
         category_filter=category_filter,
         source_filter=source_filter,
         source_exclude_list=source_exclude,
-        query_text=query,
+        diversity_bonus=diversity_bonus,
+        cross_lang_bonus=cross_lang_bonus,
     )
-
-    if not sections and not chunks:
-        return "未找到相关内容。", history
-
-    context = format_context(sections, chunks)
-    client = _get_llm_client()
-
-    if not history:
-        # First question
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"参考资料：\n\n{context}\n\n问题：{query}"},
-        ]
-    else:
-        # Follow-up: append new context + question to existing history
-        history.append({
-            "role": "user",
-            "content": f"参考资料：\n\n{context}\n\n追问：{query}",
-        })
-        messages = history
-
-    response = client.chat.completions.create(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        max_tokens=config.LLM_MAX_TOKENS,
-        messages=messages,
-    )
-    answer = response.choices[0].message.content
-
-    # Append assistant reply to history
-    new_history = list(messages)
-    new_history.append({"role": "assistant", "content": answer})
-
-    return answer, new_history
+    return answer_question(query, embed_model, history=history, options=options)
 
 
 # ── Gradio interface ─────────────────────────────────────────────────────────
@@ -148,12 +88,6 @@ def _handle_chat(message: str, chat_history: list, llm_state,
                  search_mode: bool, src_filter: list, cat_filter: list,
                  exc_filter: list, div_bonus: float, lang_bonus: float):
     """Process one chat turn."""
-    _ensure_model()
-
-    # Update config with slider values (avoids threading through all functions)
-    config.DIVERSITY_BONUS = div_bonus
-    config.CROSS_LANG_BONUS = lang_bonus
-
     source = [s for s in (src_filter or []) if s] or None
     category = [c for c in (cat_filter or []) if c] or None
     excludes = [e for e in (exc_filter or []) if e] or None
@@ -161,6 +95,8 @@ def _handle_chat(message: str, chat_history: list, llm_state,
 
     # Handle / commands
     msg = message.strip()
+    if not msg:
+        return chat_history, "", llm_state
     if msg in ("/new", "/clear"):
         chat_history.append({"role": "user", "content": "/new"})
         chat_history.append({"role": "assistant", "content": "对话已重置。"})
@@ -176,22 +112,37 @@ def _handle_chat(message: str, chat_history: list, llm_state,
         })
         return chat_history, "", llm_state
 
-    if search_mode:
-        answer = _do_search(message, source_filter=source,
-                            category_filter=category,
-                            source_exclude=excludes)
-        chat_history.append({"role": "user", "content": message})
-        chat_history.append({"role": "assistant", "content": answer})
-        return chat_history, "", llm_state
-    else:
-        state = list(llm_state) if llm_state else []
-        answer, new_state = _do_qa(message, state,
-                                   source_filter=source,
-                                   category_filter=category,
-                                   source_exclude=excludes)
-        chat_history.append({"role": "user", "content": message})
-        chat_history.append({"role": "assistant", "content": answer})
-        return chat_history, "", new_state
+    try:
+        _ensure_model()
+        if search_mode:
+            answer = _do_search(
+                message,
+                source_filter=source,
+                category_filter=category,
+                source_exclude=excludes,
+                diversity_bonus=div_bonus,
+                cross_lang_bonus=lang_bonus,
+            )
+            new_state = llm_state
+        else:
+            state = list(llm_state) if llm_state else []
+            answer, new_state = _do_qa(
+                message,
+                state,
+                source_filter=source,
+                category_filter=category,
+                source_exclude=excludes,
+                diversity_bonus=div_bonus,
+                cross_lang_bonus=lang_bonus,
+            )
+    except Exception as error:
+        print(f"Request failed: {error}", file=sys.stderr)
+        answer = f"请求失败：{error}"
+        new_state = llm_state
+
+    chat_history.append({"role": "user", "content": message})
+    chat_history.append({"role": "assistant", "content": answer})
+    return chat_history, "", new_state
 
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
@@ -240,12 +191,12 @@ def build_ui():
 
                 gr.Markdown("### 排序加权")
                 div_slider = gr.Slider(
-                    minimum=0, maximum=0.5, value=0.15, step=0.01,
+                    minimum=0, maximum=0.5, value=config.DIVERSITY_BONUS, step=0.01,
                     label="每本书首位加权",
                     info="每本书第一个结果的匹配分数加成（0 = 关闭）",
                 )
                 lang_slider = gr.Slider(
-                    minimum=0, maximum=0.3, value=0.10, step=0.01,
+                    minimum=0, maximum=0.3, value=config.CROSS_LANG_BONUS, step=0.01,
                     label="跨语言加权",
                     info="不同语言结果的分数加成（0 = 关闭）",
                 )
@@ -288,15 +239,16 @@ def build_ui():
             outputs=[chatbot, msg_input, llm_state],
         )
 
-    return demo
+    return demo.queue(default_concurrency_limit=1, max_size=16)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Weber Knowledge Base — Web UI")
-    parser.add_argument("--port", type=int, default=7860, help="Server port")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "7860")),
+                        help="Server port")
     parser.add_argument("--share", action="store_true",
                         help="Create a public Gradio share link")
-    parser.add_argument("--host", default="127.0.0.1",
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"),
                         help="Bind address (default: 127.0.0.1)")
     args = parser.parse_args()
 
@@ -315,7 +267,10 @@ def main():
         share=args.share,
         css=CSS,
         theme=gr.themes.Soft(),
-        inbrowser=True,
+        inbrowser=(
+            os.environ.get("WEBER_NO_BROWSER") != "1"
+            and args.host in {"127.0.0.1", "localhost"}
+        ),
     )
 
 

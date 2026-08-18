@@ -4,8 +4,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WBER_RAG_DIR = os.path.dirname(os.path.abspath(__file__))
-CHROMA_PERSIST_DIR = os.path.join(WBER_RAG_DIR, "data", "chroma_db")
+WEBER_RAG_DIR = os.path.dirname(os.path.abspath(__file__))
+CHROMA_PERSIST_DIR = os.path.join(WEBER_RAG_DIR, "data", "chroma_db")
+INDEX_MANIFEST_PATH = os.path.join(WEBER_RAG_DIR, "data", "index_manifest.json")
+INDEX_SCHEMA_VERSION = 2
 
 # Chunking
 CHUNK_SIZE = 512       # Chinese characters per chunk
@@ -16,6 +18,7 @@ EMBEDDING_MODEL = "BAAI/bge-m3"  # BGE flagship, multilingual, ~2GB
 EMBEDDING_DIM = 1024   # bge-m3 outputs 1024-dim vectors
 EMBEDDING_BATCH_SIZE = 3  # Lower = less VRAM; increase if you have >16GB GPU
 EMBEDDING_DEVICE = None   # None = auto (GPU if available), "cpu" to force CPU
+HF_HUB_OFFLINE = os.environ.get("HF_HUB_OFFLINE", "").lower() in {"1", "true", "yes"}
 
 # Retrieval
 TOP_SECTIONS = 10      # Number of top sections to retrieve in stage 1
@@ -29,6 +32,8 @@ LLM_TEMPERATURE = 0.1
 LLM_MAX_TOKENS = 8192
 LLM_BASE_URL = "https://api.deepseek.com"
 LLM_API_KEY_ENV = "DEEPSEEK_API_KEY"
+LLM_CONTEXT_TOKEN_BUDGET = 28_000
+LLM_HISTORY_TOKEN_BUDGET = 12_000
 
 # Source registry
 # Ordered small → large so quick wins finish first.

@@ -13,24 +13,20 @@ Usage:
 
 import re
 import sys
-import os
 import argparse
 from difflib import get_close_matches
-from openai import OpenAI
 import config
 from embeddings import create_embedding_model
-from store import (hierarchical_search, collection_stats,
-                   list_book_names, list_sources_grouped)
-
-
-SYSTEM_PROMPT = """你是一位马克斯·韦伯（Max Weber）研究专家。请基于以下参考资料回答用户的问题。
-
-回答要求：
-1. 准确引用参考资料中的原文内容，不要编造
-2. 如果多个来源有不同表述，请指出差异
-3. 每个关键论断后标注来源，格式：[书名, 章节名, 出版社]（参考每条结果前的"书"、"章节"、"出版社"字段）
-4. 如果参考资料不足以回答问题，请明确说明
-5. 回答使用中文"""
+from store import collection_stats, list_sources_grouped
+from rag_service import (
+    RetrievalOptions,
+    answer_question,
+    format_context as _service_format_context,
+    format_search_results,
+    format_source,
+    get_llm_client,
+    retrieve,
+)
 
 
 def resolve_book_name(partial: str) -> str:
@@ -116,97 +112,34 @@ def resolve_collection_name(partial: str) -> str:
 
 
 def _format_source(meta: dict) -> str:
-    """Format source citation for display: 书：《title》 | 章节：chapter | 出版社：publisher."""
-    book = meta.get("book", "?")
-    chapter = meta.get("chapter", "?")
-    pub = meta.get("publisher", meta.get("edition", "?"))
-    year = meta.get("year", "")
-    yr = f" {year}" if year else ""
-    return f"书：《{book}》 | 章节：{chapter} | 出版社：{pub}{yr}"
+    """Backward-compatible alias used by older integrations."""
+    return format_source(meta)
 
 
 def format_context(sections: list[dict], chunks: list[dict]) -> str:
-    """Format retrieved sections and chunks into a prompt context."""
-    parts = []
-
-    if sections:
-        parts.append("=== 相关章节 ===")
-        for i, s in enumerate(sections):
-            meta = s.get("metadata", {})
-            src = _format_source(meta)
-            text = s["text"][:5000]
-            parts.append(f"\n{src}\n{text}\n")
-
-    if chunks:
-        parts.append("=== 相关段落 ===")
-        for i, c in enumerate(chunks):
-            meta = c.get("metadata", {})
-            src = _format_source(meta)
-            parts.append(f"\n--- 段落 {i+1} ---\n{src}\n{c['text']}\n")
-
-    return "\n".join(parts)
+    """Backward-compatible bounded context formatter."""
+    return _service_format_context(sections, chunks)
 
 
 def search_only(query: str, embed_model, category_filter: str | list[str] | None = None,
                 source_filter: str | list[str] | None = None,
                 source_exclude: str | None = None,
                 collection_filter: str | None = None,
-                collection_exclude: str | None = None) -> str:
+                collection_exclude: str | None = None,
+                top_sections: int = config.TOP_SECTIONS,
+                top_chunks: int = config.TOP_CHUNKS) -> str:
     """Retrieve and display matching text without LLM Q&A."""
-    stats = collection_stats()
-    if stats["chunks"] == 0:
-        return "知识库尚未索引。请先运行 python ingest.py"
-
-    q_emb = embed_model.embed_query(query)
-    sections, chunks = hierarchical_search(
-        q_emb,
-        top_sections=config.TOP_SECTIONS,
-        top_chunks=config.TOP_CHUNKS,
+    options = RetrievalOptions(
         category_filter=category_filter,
         source_filter=source_filter,
         source_exclude=source_exclude,
         collection_filter=collection_filter,
         collection_exclude=collection_exclude,
-        query_text=query,
+        top_sections=top_sections,
+        top_chunks=top_chunks,
     )
-
-    if not sections and not chunks:
-        return "未找到相关内容。"
-
-    # Show similarity scores if available
-    if sections:
-        print(f"=== 相关章节 (top {len(sections)}) ===")
-        for i, s in enumerate(sections):
-            meta = s.get("metadata", {})
-            dist = s.get("distance")
-            score = f" [相似度: {1 - dist:.4f}]" if dist is not None else ""
-            src = _format_source(meta)
-            text = s["text"][:5000]
-            print(f"\n--- 章节 {i+1}{score} ---")
-            print(src)
-            print(text)
-
-    if chunks:
-        print(f"\n=== 相关段落 (top {len(chunks)}) ===")
-        for i, c in enumerate(chunks):
-            meta = c.get("metadata", {})
-            dist = c.get("distance")
-            score = f" [相似度: {1 - dist:.4f}]" if dist is not None else ""
-            src = _format_source(meta)
-            print(f"\n--- 段落 {i+1}{score} ---")
-            print(src)
-            print(c["text"])
-
-    # Summary
-    sources = set()
-    for item in (chunks or []) + (sections or []):
-        meta = item.get("metadata", {})
-        pub = meta.get("publisher", meta.get("edition", "?"))
-        sources.add(f"《{meta.get('book', '?')}》（{pub}）")
-
-    print(f"\n---\n共检索到 {len(sections)} 个章节、{len(chunks)} 个段落"
-          f"（来自 {len(sources)} 个来源）")
-
+    sections, chunks = retrieve(query, embed_model, options)
+    print(format_search_results(sections, chunks))
     return ""  # Already printed directly
 
 
@@ -214,72 +147,25 @@ def answer_query(query: str, embed_model, category_filter: str | list[str] | Non
                  source_filter: str | list[str] | None = None,
                  source_exclude: str | None = None,
                  collection_filter: str | None = None,
-                 collection_exclude: str | None = None) -> str:
+                 collection_exclude: str | None = None,
+                 top_sections: int = config.TOP_SECTIONS,
+                 top_chunks: int = config.TOP_CHUNKS) -> str:
     """Full RAG pipeline: retrieve + generate."""
-    # Check if collection has data
-    stats = collection_stats()
-    if stats["chunks"] == 0:
-        return "知识库尚未索引。请先运行 python ingest.py"
-
-    # Embed query
-    q_emb = embed_model.embed_query(query)
-
-    # Hierarchical retrieval
-    sections, chunks = hierarchical_search(
-        q_emb,
-        top_sections=config.TOP_SECTIONS,
-        top_chunks=config.TOP_CHUNKS,
+    options = RetrievalOptions(
         category_filter=category_filter,
         source_filter=source_filter,
         source_exclude=source_exclude,
         collection_filter=collection_filter,
         collection_exclude=collection_exclude,
-        query_text=query,
+        top_sections=top_sections,
+        top_chunks=top_chunks,
     )
-
-    if not sections and not chunks:
-        return "未找到相关内容。"
-
-    # Build context
-    context = format_context(sections, chunks)
-
-    # Call LLM
-    client = OpenAI(
-        api_key=os.environ.get(config.LLM_API_KEY_ENV, os.environ.get("OPENAI_API_KEY")),
-        base_url=config.LLM_BASE_URL,
-    )
-    response = client.chat.completions.create(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        max_tokens=config.LLM_MAX_TOKENS,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"参考资料：\n\n{context}\n\n问题：{query}"},
-        ],
-    )
-
-    answer = response.choices[0].message.content
-
-    # Append source summary
-    sources = set()
-    for c in (chunks or []) + (sections or []):
-        meta = c.get("metadata", {})
-        book = meta.get("book", "?")
-        chapter = meta.get("chapter", "?")
-        pub = meta.get("publisher", meta.get("edition", "?"))
-        sources.add(f"《{book}》 {chapter}（{pub}）")
-
-    if sources:
-        answer += "\n\n---\n参考来源：\n" + "\n".join(sorted(sources)[:10])
-
+    answer, _ = answer_question(query, embed_model, options=options)
     return answer
 
 
-def _get_llm_client() -> OpenAI:
-    return OpenAI(
-        api_key=os.environ.get(config.LLM_API_KEY_ENV, os.environ.get("OPENAI_API_KEY")),
-        base_url=config.LLM_BASE_URL,
-    )
+def _get_llm_client():
+    return get_llm_client()
 
 
 def answer_query_with_history(query: str, embed_model,
@@ -287,46 +173,20 @@ def answer_query_with_history(query: str, embed_model,
                                source_filter: str | list[str] | None = None,
                                source_exclude: str | None = None,
                                collection_filter: str | None = None,
-                               collection_exclude: str | None = None):
+                               collection_exclude: str | None = None,
+                               top_sections: int = config.TOP_SECTIONS,
+                               top_chunks: int = config.TOP_CHUNKS):
     """First question: full RAG retrieval, returns (answer, history)."""
-    stats = collection_stats()
-    if stats["chunks"] == 0:
-        return "知识库尚未索引。请先运行 python ingest.py", []
-
-    q_emb = embed_model.embed_query(query)
-    sections, chunks = hierarchical_search(
-        q_emb,
-        top_sections=config.TOP_SECTIONS,
-        top_chunks=config.TOP_CHUNKS,
+    options = RetrievalOptions(
         category_filter=category_filter,
         source_filter=source_filter,
         source_exclude=source_exclude,
         collection_filter=collection_filter,
         collection_exclude=collection_exclude,
-        query_text=query,
+        top_sections=top_sections,
+        top_chunks=top_chunks,
     )
-
-    if not sections and not chunks:
-        return "未找到相关内容。", []
-
-    context = format_context(sections, chunks)
-    client = _get_llm_client()
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"参考资料：\n\n{context}\n\n问题：{query}"},
-    ]
-
-    response = client.chat.completions.create(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        max_tokens=config.LLM_MAX_TOKENS,
-        messages=messages,
-    )
-
-    answer = response.choices[0].message.content
-    messages.append({"role": "assistant", "content": answer})
-    return answer, messages
+    return answer_question(query, embed_model, history=[], options=options)
 
 
 def follow_up(query: str, history: list[dict], embed_model,
@@ -334,41 +194,20 @@ def follow_up(query: str, history: list[dict], embed_model,
               source_filter: str | list[str] | None = None,
               source_exclude: str | None = None,
               collection_filter: str | None = None,
-              collection_exclude: str | None = None):
+              collection_exclude: str | None = None,
+              top_sections: int = config.TOP_SECTIONS,
+              top_chunks: int = config.TOP_CHUNKS):
     """Follow-up question: re-retrieve, append to history, returns (answer, history)."""
-    # Re-retrieve context for the new question
-    q_emb = embed_model.embed_query(query)
-    sections, chunks = hierarchical_search(
-        q_emb,
-        top_sections=config.TOP_SECTIONS,
-        top_chunks=config.TOP_CHUNKS,
+    options = RetrievalOptions(
         category_filter=category_filter,
         source_filter=source_filter,
         source_exclude=source_exclude,
         collection_filter=collection_filter,
         collection_exclude=collection_exclude,
-        query_text=query,
+        top_sections=top_sections,
+        top_chunks=top_chunks,
     )
-
-    context = format_context(sections, chunks)
-    client = _get_llm_client()
-
-    # Append user message with new context
-    history.append({
-        "role": "user",
-        "content": f"参考资料：\n\n{context}\n\n追问：{query}",
-    })
-
-    response = client.chat.completions.create(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        max_tokens=config.LLM_MAX_TOKENS,
-        messages=history,
-    )
-
-    answer = response.choices[0].message.content
-    history.append({"role": "assistant", "content": answer})
-    return answer, history
+    return answer_question(query, embed_model, history=history, options=options)
 
 
 def main():
@@ -602,7 +441,9 @@ def main():
                             source_filter=src_filter,
                             source_exclude=exc_filter,
                             collection_filter=col_filter,
-                            collection_exclude=col_exc)
+                            collection_exclude=col_exc,
+                            top_sections=args.top_sections,
+                            top_chunks=args.top_chunks)
                 print()
                 continue
             elif not history:
@@ -611,14 +452,18 @@ def main():
                     source_filter=src_filter,
                     source_exclude=exc_filter,
                     collection_filter=col_filter,
-                    collection_exclude=col_exc)
+                    collection_exclude=col_exc,
+                    top_sections=args.top_sections,
+                    top_chunks=args.top_chunks)
             else:
                 answer, history = follow_up(query, history, embed_model,
                                             cat_filter,
                                             source_filter=src_filter,
                                             source_exclude=exc_filter,
                                             collection_filter=col_filter,
-                                            collection_exclude=col_exc)
+                                            collection_exclude=col_exc,
+                                            top_sections=args.top_sections,
+                                            top_chunks=args.top_chunks)
 
             print(answer)
             print()
@@ -632,13 +477,17 @@ def main():
                         source_filter=source_filter,
                         source_exclude=source_exclude,
                         collection_filter=collection_filter,
-                        collection_exclude=collection_exclude)
+                        collection_exclude=collection_exclude,
+                        top_sections=args.top_sections,
+                        top_chunks=args.top_chunks)
         else:
             answer = answer_query(args.query, embed_model, args.category,
                                   source_filter=source_filter,
                                   source_exclude=source_exclude,
                                   collection_filter=collection_filter,
-                                  collection_exclude=collection_exclude)
+                                  collection_exclude=collection_exclude,
+                                  top_sections=args.top_sections,
+                                  top_chunks=args.top_chunks)
             print(answer)
 
 

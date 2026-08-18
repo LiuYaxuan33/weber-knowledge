@@ -12,10 +12,12 @@ re-embedding or source files needed. Runs on CPU, no GPU required.
 import os
 import sys
 import argparse
+import hashlib
 import json
 import time
 import numpy as np
 from store import reset_collections, get_collections
+from index_manifest import write_manifest
 
 
 def _get_dim(arr) -> int:
@@ -33,9 +35,10 @@ def import_data(input_path: str, force: bool = False, batch_size: int = 5000):
         force: if True, overwrite existing data
         batch_size: ChromaDB upsert batch size
     """
-    # Check if parts need to be joined
+    # Check if parts need to be joined. A previous setup may have left an
+    # assembled archive behind while a git pull updated only the tracked parts.
+    part0 = input_path + ".part000"
     if not os.path.exists(input_path):
-        part0 = input_path + ".part000"
         if os.path.exists(part0):
             print(f"Found split parts, joining...")
             _join_parts(input_path)
@@ -44,15 +47,33 @@ def import_data(input_path: str, force: bool = False, batch_size: int = 5000):
             print("Run 'python export_data.py' first on the source machine,")
             print("or place the .npz file (or its .part* files) in the data/ directory.")
             sys.exit(1)
+    elif os.path.exists(part0):
+        try:
+            _verify_checksum(input_path)
+        except ValueError:
+            print("Assembled archive is stale; rebuilding it from tracked parts...")
+            _join_parts(input_path)
 
+    _verify_checksum(input_path)
     print(f"Loading {input_path}...", end=" ", flush=True)
     t0 = time.time()
-    data = np.load(input_path, allow_pickle=True)
+    data = np.load(input_path, allow_pickle=False)
     print(f"done ({time.time() - t0:.1f}s)")
 
     sec_count = int(data.get("sec_count", 0))
     chk_count = int(data.get("chk_count", 0))
     emb_dim = int(data.get("emb_dim", 0))
+    required = {
+        "sec_ids", "sec_embeddings", "sec_documents", "sec_metadatas",
+        "chk_ids", "chk_embeddings", "chk_documents", "chk_metadatas",
+        "manifest_json",
+    }
+    missing = sorted(required.difference(data.files))
+    if missing:
+        raise ValueError(f"导出文件缺少字段: {', '.join(missing)}")
+
+    manifest = json.loads(str(data["manifest_json"].item()))
+    _validate_archive(data, sec_count, chk_count, emb_dim)
 
     print(f"  Sections: {sec_count}, Chunks: {chk_count}, Dim: {emb_dim}")
 
@@ -96,6 +117,9 @@ def import_data(input_path: str, force: bool = False, batch_size: int = 5000):
         )
 
     elapsed = time.time() - t0
+    if sec_coll.count() != sec_count or chk_coll.count() != chk_count:
+        raise RuntimeError("导入后的记录数与归档不一致，索引可能不完整。")
+    write_manifest(manifest)
     print(f"\nImport complete ({elapsed:.1f}s)")
     print(f"  Sections: {sec_coll.count()}, Chunks: {chk_coll.count()}")
 
@@ -157,6 +181,38 @@ def _join_parts(input_path: str):
             with open(part, "rb") as pf:
                 out.write(pf.read())
     print(f"Joined: {os.path.getsize(base) / 1024 / 1024:.1f} MB")
+
+
+def _validate_archive(data, sec_count: int, chk_count: int, emb_dim: int) -> None:
+    groups = [
+        ("sec", sec_count, data["sec_ids"], data["sec_embeddings"],
+         data["sec_documents"], data["sec_metadatas"]),
+        ("chk", chk_count, data["chk_ids"], data["chk_embeddings"],
+         data["chk_documents"], data["chk_metadatas"]),
+    ]
+    for label, expected, ids, embeddings, documents, metadatas in groups:
+        lengths = {len(ids), len(embeddings), len(documents), len(metadatas)}
+        if lengths != {expected}:
+            raise ValueError(f"{label} 数组长度不一致: {sorted(lengths)}，期望 {expected}")
+        if expected and (embeddings.ndim != 2 or embeddings.shape[1] != emb_dim):
+            raise ValueError(
+                f"{label} 嵌入维度为 {getattr(embeddings, 'shape', None)}，期望 (*, {emb_dim})"
+            )
+
+
+def _verify_checksum(input_path: str) -> None:
+    checksum_path = input_path + ".sha256"
+    if not os.path.exists(checksum_path):
+        raise ValueError(f"缺少校验文件: {checksum_path}")
+    with open(checksum_path, "r", encoding="ascii") as file:
+        expected = file.read().strip().split()[0].lower()
+    digest = hashlib.sha256()
+    with open(input_path, "rb") as file:
+        for block in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(block)
+    actual = digest.hexdigest()
+    if actual != expected:
+        raise ValueError(f"数据文件 SHA-256 校验失败: expected={expected}, actual={actual}")
 
 
 def main():

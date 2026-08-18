@@ -50,18 +50,12 @@ def delete_source(source_name: str) -> int:
     sec_coll, chk_coll = get_collections()
     total = 0
 
-    # Try source_name first (new data), then fall back to publisher field
     for coll in [sec_coll, chk_coll]:
         if coll.count() == 0:
             continue
-        # Check which field exists in metadata
-        sample = coll.get(limit=1, include=["metadatas"])
-        metas = sample.get("metadatas", [])
-        if metas and metas[0] and "source_name" in metas[0]:
-            coll.delete(where={"source_name": source_name})
-        elif metas and metas[0] and "publisher" in metas[0]:
-            coll.delete(where={"publisher": source_name})
-        total += coll.count()  # approximate after delete
+        before = coll.count()
+        coll.delete(where={"source_name": source_name})
+        total += before - coll.count()
 
     return total
 
@@ -189,13 +183,16 @@ def search_sections(query_embedding: list[float], n_results: int = 4,
                          collection_filter=collection_filter,
                          collection_exclude=collection_exclude)
 
+    if coll.count() == 0:
+        return []
+    fetch_count = min(coll.count(), max(n_results * 4, n_results + 10))
     result = coll.query(
         query_embeddings=[query_embedding],
-        n_results=n_results,
+        n_results=fetch_count,
         where=where,
         include=["documents", "metadatas", "distances"],
     )
-    return _format_results(result)
+    return _format_results(result, limit=n_results)
 
 
 def search_chunks(query_embedding: list[float], section_ids: list[str],
@@ -216,13 +213,16 @@ def search_chunks(query_embedding: list[float], section_ids: list[str],
                          collection_exclude=collection_exclude,
                          extra=extra)
 
+    if coll.count() == 0:
+        return []
+    fetch_count = min(coll.count(), max(n_results * 4, n_results + 10))
     result = coll.query(
         query_embeddings=[query_embedding],
-        n_results=n_results,
+        n_results=fetch_count,
         where=where,
         include=["documents", "metadatas", "distances"],
     )
-    return _format_results(result)
+    return _format_results(result, limit=n_results)
 
 
 def hierarchical_search(query_embedding: list[float],
@@ -233,15 +233,16 @@ def hierarchical_search(query_embedding: list[float],
                         source_exclude_list: list[str] | None = None,
                         collection_filter: str | None = None,
                         collection_exclude: str | None = None,
-                        query_text: str = "") -> tuple[list[dict], list[dict]]:
+                        query_text: str = "",
+                        diversity_bonus: float | None = None,
+                        cross_lang_bonus: float | None = None) -> tuple[list[dict], list[dict]]:
     """Two-stage hierarchical retrieval.
 
     Returns (section_results, chunk_results).
-    Scoring bonuses are read from config.DIVERSITY_BONUS / config.CROSS_LANG_BONUS.
+    Explicit scoring bonuses are request-local. Config values are defaults.
     """
-    import config
-    div_bonus = config.DIVERSITY_BONUS
-    lang_bonus = config.CROSS_LANG_BONUS
+    div_bonus = config.DIVERSITY_BONUS if diversity_bonus is None else diversity_bonus
+    lang_bonus = config.CROSS_LANG_BONUS if cross_lang_bonus is None else cross_lang_bonus
 
     sections = search_sections(query_embedding, n_results=top_sections,
                                category_filter=category_filter,
@@ -399,7 +400,7 @@ def repair_source_names(source_map: dict[str, str]) -> int:
             updated += len(fix_ids)
 
     return updated
-def _format_results(result: dict) -> list[dict]:
+def _format_results(result: dict, limit: int | None = None) -> list[dict]:
     """Convert ChromaDB query result to list of dicts, filtering front matter."""
     if not result["ids"] or not result["ids"][0]:
         return []
@@ -413,7 +414,7 @@ def _format_results(result: dict) -> list[dict]:
     for i in range(len(ids)):
         meta = metas[i] or {}
         chapter = meta.get("chapter", "")
-        if _is_front_matter(chapter):
+        if is_non_content_chapter(chapter):
             continue
         formatted.append({
             "id": ids[i],
@@ -421,26 +422,35 @@ def _format_results(result: dict) -> list[dict]:
             "metadata": meta,
             "distance": dists[i],
         })
+        if limit is not None and len(formatted) >= limit:
+            break
     return formatted
 
 
-_FRONT_MATTER_PATTERNS = [
-    "前言", "序言", "序", "目录", "版权", "出版前言", "内容简介",
-    "英文版权页", "图字", "索引", "人名索引", "缩略语",
-    "Title Page", "Copyright", "Contents", "Foreword", "Preface",
-    "Notes", "Frontispiece", "Original Copyright", "Original Title",
-    "附录", "后记", "编后记", "译后记",
-]
+_NON_CONTENT_TITLES = {
+    "目录", "版权", "版权页", "版权信息", "英文版权页", "内容简介",
+    "索引", "人名索引", "文献索引", "缩略语", "缩略语列表",
+    "title page", "half title page", "copyright", "copyright page",
+    "contents", "frontispiece", "original copyright page", "original title page",
+}
+
+
+def is_non_content_chapter(chapter: str) -> bool:
+    """Return True only for clearly non-substantive navigation/legal pages.
+
+    Prefaces, notes and appendices can contain valuable scholarship and must
+    remain searchable. In particular, substring matching on ``序`` would also
+    remove 正当性秩序、法律程序 and 种姓阶序.
+    """
+    if not chapter:
+        return False
+    normalized = " ".join(chapter.replace("　", " ").split()).strip(" ：:.-—_")
+    return normalized.lower() in _NON_CONTENT_TITLES
 
 
 def _is_front_matter(chapter: str) -> bool:
-    """Check if a chapter name looks like front/back matter to skip."""
-    if not chapter:
-        return False
-    for pat in _FRONT_MATTER_PATTERNS:
-        if pat in chapter:
-            return True
-    return False
+    """Deprecated internal alias retained for compatibility."""
+    return is_non_content_chapter(chapter)
 
 
 def _is_cjk(text: str) -> bool:

@@ -1,0 +1,13 @@
+{
+  "chunk_overlap": 128,
+  "chunk_size": 512,
+  "chunks": 42317,
+  "created_at": "2026-08-18T02:54:58.506886+00:00",
+  "embedding_dimension": 1024,
+  "embedding_model": "BAAI/bge-m3",
+  "schema_version": 2,
+  "section_embedding_strategy": "normalized_mean_of_chunk_embeddings",
+  "sections": 1299,
+  "source_count": 29,
+  "source_registry_sha256": "2b54b29827c2cc15b0f97598474b8e621f6d2dfe509700d443e2583f587468c4"
+}

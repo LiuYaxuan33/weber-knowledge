@@ -1,4 +1,5 @@
 import re
+import config
 
 
 def load_markdown(md_path: str, publisher: str, category: str,
@@ -82,8 +83,8 @@ def load_markdown(md_path: str, publisher: str, category: str,
                 "author": author,
                 "source_category": category,
                 "source_name": source_name,
-                "chunk_size": 512,
-                "chunk_overlap": 128,
+                "chunk_size": config.CHUNK_SIZE,
+                "chunk_overlap": config.CHUNK_OVERLAP,
             },
         })
         if year is not None:

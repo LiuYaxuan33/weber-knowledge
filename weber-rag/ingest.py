@@ -7,15 +7,18 @@ Usage:
     python ingest.py --stats      # Show collection stats and ingested books
 """
 
-import sys
 import time
 import argparse
+import numpy as np
 import config
 from embeddings import create_embedding_model
 from chunker import chunk_with_metadata
-from store import add_sections, add_chunks, reset_collections, collection_stats, get_collections, repair_source_names, delete_source
+from store import (add_sections, add_chunks, reset_collections, collection_stats,
+                   get_collections, repair_source_names, delete_source,
+                   is_non_content_chapter)
 from loaders.epub import load_epub
 from loaders.markdown import load_markdown
+from index_manifest import build_manifest, write_manifest
 
 
 def load_source(source: dict) -> list[dict]:
@@ -43,6 +46,10 @@ def load_source(source: dict) -> list[dict]:
         return []
 
     elapsed = time.time() - t0
+    sections = [
+        section for section in sections
+        if not is_non_content_chapter(section.get("metadata", {}).get("chapter", ""))
+    ]
     print(f"{len(sections)} sections ({elapsed:.1f}s)")
     return sections
 
@@ -83,12 +90,41 @@ def get_ingested_sources() -> set[str]:
 
 
 def build_publisher_source_map() -> dict[str, str]:
-    """Build {publisher: source_name} mapping from config (for backward compat)."""
-    mapping = {}
+    """Build an unambiguous {publisher: source_name} legacy mapping.
+
+    A publisher shared by multiple books cannot identify a source and is
+    deliberately omitted instead of silently assigning everything to the
+    first configured book.
+    """
+    grouped: dict[str, list[str]] = {}
     for src in config.SOURCES:
-        if src["publisher"] and src["publisher"] not in mapping:
-            mapping[src["publisher"]] = src["name"]
-    return mapping
+        if src["publisher"]:
+            grouped.setdefault(src["publisher"], []).append(src["name"])
+    return {publisher: names[0] for publisher, names in grouped.items() if len(names) == 1}
+
+
+def assign_section_embeddings(sections: list[dict], chunks: list[dict]) -> None:
+    """Represent each full section by the normalized mean of all its chunks.
+
+    Encoding a whole chapter directly truncates long chapters at the model's
+    sequence limit. Pooling chunk vectors covers the complete chapter without
+    an additional model pass.
+    """
+    grouped: dict[str, list[list[float]]] = {}
+    for chunk in chunks:
+        section_id = chunk["metadata"]["section_id"]
+        grouped.setdefault(section_id, []).append(chunk["embedding"])
+
+    for section in sections:
+        section_id = section["metadata"]["section_id"]
+        vectors = grouped.get(section_id)
+        if not vectors:
+            raise ValueError(f"Section has no chunk embeddings: {section_id}")
+        pooled = np.asarray(vectors, dtype=np.float32).mean(axis=0)
+        norm = float(np.linalg.norm(pooled))
+        if norm:
+            pooled /= norm
+        section["embedding"] = pooled.tolist()
 
 
 def main():
@@ -113,7 +149,8 @@ def main():
 
     if args.repair:
         source_map = build_publisher_source_map()
-        print(f"Repairing with mapping: {source_map}")
+        print("Repairing only publishers that map to exactly one source.")
+        print("Ambiguous publishers require a full rebuild and will be skipped.")
         n = repair_source_names(source_map)
         print(f"Updated {n} records with source_name.")
         return
@@ -129,8 +166,6 @@ def main():
         return
 
     if args.force:
-        print("Resetting collections...")
-        reset_collections()
         ingested_books = set()
     else:
         ingested_books = get_ingested_sources()
@@ -156,7 +191,12 @@ def main():
 
     print("Creating embedding model...")
     embed_model = create_embedding_model()
-    print(f"  Using: {config.EMBEDDING_MODEL} (dim={embed_model.dim})")
+    print(f"  Using: {embed_model.model_name} (dim={embed_model.dim})")
+
+    # Do not destroy a usable index before we know the embedding model can load.
+    if args.force:
+        print("Resetting collections...")
+        reset_collections()
 
     total_chunks = 0
 
@@ -165,17 +205,8 @@ def main():
         if not sections:
             continue
 
-        # Embed sections
-        print(f"    Embedding {len(sections)} sections...", end=" ", flush=True)
-        t0 = time.time()
-        section_texts = [s["text"] for s in sections]
-        section_embs = embed_model.embed_documents(section_texts)
-        for s, emb in zip(sections, section_embs):
-            s["embedding"] = emb
-        n_sec = add_sections(sections, embed_model)
-        print(f"stored {n_sec} ({time.time() - t0:.1f}s)")
-
-        # Chunk each section
+        # Prepare all source data before replacing existing records. This keeps
+        # --add recoverable when parsing or embedding fails.
         src_chunks = []
         for s in sections:
             chunks = chunk_with_metadata(s["text"], s["metadata"])
@@ -192,12 +223,20 @@ def main():
         chunk_embs = embed_model.embed_documents(chunk_texts)
         for c, emb in zip(src_chunks, chunk_embs):
             c["embedding"] = emb
+        assign_section_embeddings(sections, src_chunks)
+
+        if args.add:
+            removed = delete_source(src["name"])
+            print(f"    Replacing {removed} existing records...")
+
+        n_sec = add_sections(sections, embed_model)
         n_ch = add_chunks(src_chunks, embed_model)
         total_chunks += n_ch
-        print(f"stored {n_ch} ({time.time() - t0:.1f}s)")
+        print(f"stored {n_sec} sections, {n_ch} chunks ({time.time() - t0:.1f}s)")
 
     # Final stats
     stats = collection_stats()
+    write_manifest(build_manifest(embed_model, stats))
     books = get_ingested_sources()
     print(f"\nDone. Collection: {stats['sections']} sections, {stats['chunks']} chunks")
     print(f"Ingested books: {', '.join(sorted(books))}")

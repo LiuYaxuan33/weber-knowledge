@@ -1,0 +1,23 @@
+{
+  "name": "Weber Knowledge Base",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "containerEnv": {
+    "HF_HOME": "/workspaces/.cache/huggingface",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "forwardPorts": [7860],
+  "portsAttributes": {
+    "7860": {
+      "label": "Weber Knowledge Base",
+      "onAutoForward": "openBrowser",
+      "protocol": "http"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup-codespace.sh",
+  "postStartCommand": "bash .devcontainer/start-codespace.sh"
+}

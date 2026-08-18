@@ -1,4 +1,4 @@
-"""Synchronize the GitHub checkout to a private Hugging Face Docker Space."""
+"""Synchronize the GitHub checkout to a private Hugging Face Gradio Space."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def main() -> None:
     api.create_repo(
         repo_id=repo_id,
         repo_type="space",
-        space_sdk="docker",
+        space_sdk="gradio",
         private=True,
         exist_ok=True,
     )

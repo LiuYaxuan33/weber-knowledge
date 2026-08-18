@@ -43,7 +43,7 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-      - name: Deploy private Docker Space
+      - name: Deploy private Gradio Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}

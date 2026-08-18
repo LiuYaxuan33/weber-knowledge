@@ -3,8 +3,10 @@ title: Weber Knowledge Base
 emoji: 📚
 colorFrom: gray
 colorTo: blue
-sdk: docker
-app_port: 7860
+sdk: gradio
+app_file: weber-rag/serve.py
+python_version: "3.12"
+sdk_version: "6.15.0"
 ---
 
 # Weber Knowledge Base
@@ -15,7 +17,7 @@ app_port: 7860
 
 ## 在线部署
 
-本项目由 GitHub Actions 自动同步到一个私有 Hugging Face Docker Space。GitHub Pages 不能运行 Python 后端，因此 GitHub 负责版本管理、测试与部署，Space 提供固定的浏览器访问网址。
+本项目由 GitHub Actions 自动同步到一个私有 Hugging Face Gradio Space。GitHub Pages 不能运行 Python 后端，因此 GitHub 负责版本管理、测试与部署，Space 提供固定的浏览器访问网址。根目录的 `Dockerfile` 保留用于其他容器平台，但 Hugging Face 免费部署不依赖 Docker。
 
 在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置：
 

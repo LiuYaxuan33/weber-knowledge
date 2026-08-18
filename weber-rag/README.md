@@ -263,7 +263,7 @@ CPU 模式：在 `config.py` 设 `EMBEDDING_DEVICE = "cpu"`。
 
 ## 在线使用
 
-根目录已提供 Dockerfile 和 GitHub Actions 工作流，可自动部署到仅账号本人可访问的私有 Hugging Face Space。配置方式见项目根目录的 [README](../README.md)。
+根目录已提供 GitHub Actions 工作流，可自动部署到仅账号本人可访问的私有 Hugging Face Gradio Space；`Dockerfile` 作为其他容器平台的可选方案保留。配置方式见项目根目录的 [README](../README.md)。
 
 ## 注意事项
 

@@ -4,6 +4,16 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+if ! python -c "import chromadb, gradio, sentence_transformers" >/dev/null 2>&1; then
+  echo "[Weber] Setup is not complete yet; startup will be retried after setup."
+  exit 0
+fi
+
+if [[ ! -d "weber-rag/data/chroma_db" ]]; then
+  echo "[Weber] Vector index is not ready yet; startup will be retried after setup."
+  exit 0
+fi
+
 if pgrep -f "weber-rag/app.py.*--port 7860" >/dev/null; then
   echo "[Weber] Web app is already running."
   exit 0

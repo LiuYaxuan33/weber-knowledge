@@ -18,6 +18,6 @@
       "protocol": "http"
     }
   },
-  "postCreateCommand": "bash .devcontainer/setup-codespace.sh",
+  "postCreateCommand": "bash .devcontainer/setup-codespace.sh && bash .devcontainer/start-codespace.sh",
   "postStartCommand": "bash .devcontainer/start-codespace.sh"
 }

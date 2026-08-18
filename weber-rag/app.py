@@ -147,96 +147,301 @@ def _handle_chat(message: str, chat_history: list, llm_state,
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 CSS = """
-.sidebar-column { overflow-y: auto !important; max-height: 100vh; }
-.main-column { overflow: hidden !important; }
-.chatbot-container { height: calc(100vh - 220px) !important; }
+:root {
+    --weber-bg: #f5f3ee;
+    --weber-surface: #fffefb;
+    --weber-text: #20211f;
+    --weber-muted: #777970;
+    --weber-line: #deddd6;
+    --weber-accent: #242722;
+}
+
+html, body, #root, .gradio-container {
+    min-height: 100%;
+    background: var(--weber-bg) !important;
+}
+
+body {
+    color: var(--weber-text);
+}
+
+.gradio-container {
+    max-width: none !important;
+    margin: 0 !important;
+}
+
+.app-shell {
+    box-sizing: border-box;
+    width: min(100%, 920px) !important;
+    height: 100dvh;
+    margin: 0 auto !important;
+    padding: clamp(22px, 4vw, 44px) clamp(16px, 3vw, 28px) 20px !important;
+    gap: 14px !important;
+}
+
+.app-header {
+    align-items: center !important;
+    flex: 0 0 auto !important;
+}
+
+.brand-block {
+    min-width: 0;
+}
+
+.brand-title {
+    margin: 0;
+    font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    font-size: clamp(27px, 4vw, 36px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+}
+
+.brand-title span {
+    margin-left: 0.32em;
+    color: var(--weber-muted);
+    font-family: inherit;
+    font-size: 0.55em;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+}
+
+.brand-subtitle p {
+    margin: 6px 0 0 !important;
+    color: var(--weber-muted);
+    font-size: 13px;
+}
+
+.new-chat {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: auto !important;
+}
+
+.new-chat button {
+    min-width: auto !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    color: var(--weber-muted) !important;
+    box-shadow: none !important;
+}
+
+.new-chat button:hover {
+    border-color: var(--weber-line) !important;
+    background: rgba(255, 255, 255, 0.45) !important;
+    color: var(--weber-text) !important;
+}
+
+#weber-chat {
+    min-height: 0 !important;
+    height: auto !important;
+    flex: 1 1 auto !important;
+    overflow: hidden !important;
+    border: 1px solid var(--weber-line) !important;
+    border-radius: 18px !important;
+    background: rgba(255, 254, 251, 0.74) !important;
+    box-shadow: none !important;
+}
+
+#weber-chat .message {
+    max-width: min(84%, 700px) !important;
+    border: 0 !important;
+    border-radius: 15px !important;
+    box-shadow: none !important;
+}
+
+#weber-chat .message.user {
+    background: var(--weber-accent) !important;
+    color: #fffefb !important;
+}
+
+#weber-chat .message.bot {
+    background: #ebe9e2 !important;
+    color: var(--weber-text) !important;
+}
+
+.composer {
+    align-items: stretch !important;
+    flex: 0 0 auto !important;
+    gap: 10px !important;
+}
+
+#question-input {
+    min-width: 0 !important;
+    border: 1px solid var(--weber-line) !important;
+    border-radius: 14px !important;
+    background: var(--weber-surface) !important;
+    box-shadow: none !important;
+}
+
+#question-input:focus-within {
+    border-color: #a7a89f !important;
+    box-shadow: 0 0 0 3px rgba(36, 39, 34, 0.06) !important;
+}
+
+#question-input textarea {
+    padding: 12px 14px !important;
+    font-size: 15px !important;
+}
+
+#send-button {
+    flex: 0 0 82px !important;
+    width: 82px !important;
+    min-width: 82px !important;
+    border: 0 !important;
+    border-radius: 14px !important;
+    background: var(--weber-accent) !important;
+    color: #fffefb !important;
+    box-shadow: none !important;
+}
+
+#send-button:hover {
+    background: #383c35 !important;
+}
+
+#search-settings {
+    flex: 0 0 auto !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+#search-settings > .label-wrap {
+    padding: 4px 2px !important;
+    color: var(--weber-muted) !important;
+    font-size: 13px !important;
+}
+
+.settings-grid {
+    gap: 10px !important;
+}
+
+.settings-grid > div {
+    min-width: 190px !important;
+}
+
+footer {
+    display: none !important;
+}
+
+@media (max-width: 640px) {
+    .app-shell {
+        padding-top: 18px !important;
+        padding-bottom: 12px !important;
+        gap: 10px !important;
+    }
+
+    .brand-subtitle {
+        display: none;
+    }
+
+    #weber-chat {
+        border-radius: 15px !important;
+    }
+
+    #send-button {
+        flex-basis: 68px !important;
+        width: 68px !important;
+        min-width: 68px !important;
+    }
+}
 """
+
+
+def _clear_chat():
+    """Clear both visible messages and hidden LLM conversation state."""
+    return [], "", None
 
 
 def build_ui():
     """Build and return the Gradio Blocks app."""
-    sources = [""] + [g["source_name"] for g in list_sources_grouped(min_chunks=0)]
-    categories = [""] + config.CATEGORIES
+    sources = [g["source_name"] for g in list_sources_grouped(min_chunks=0)]
 
     with gr.Blocks(title="Weber 知识库", fill_height=True) as demo:
-        gr.Markdown("# Weber 知识库查询")
-        gr.Markdown("基于马克斯·韦伯著作、传记与研究文献的 RAG 问答系统。")
-
         # Hidden LLM conversation state
         llm_state = gr.State(None)
+        div_bonus = gr.State(config.DIVERSITY_BONUS)
+        lang_bonus = gr.State(config.CROSS_LANG_BONUS)
 
-        with gr.Row(equal_height=True):
-            # ── Sidebar: filters ──
-            with gr.Column(scale=1, min_width=220, elem_classes="sidebar-column"):
-                gr.Markdown("### 筛选条件")
-                src_dd = gr.Dropdown(
-                    choices=sources[1:], value=[], label="来源筛选",
-                    info="按具体书或合集过滤（可多选，空 = 全部）",
-                    multiselect=True,
-                )
-                cat_dd = gr.Dropdown(
-                    choices=categories[1:], value=[], label="分类筛选",
-                    info="韦伯著述 / 传记与介绍 / 思想研究与讨论 / 相关史料（可多选，空 = 全部）",
-                    multiselect=True,
-                )
-                exc_dd = gr.Dropdown(
-                    choices=sources[1:], value=[], label="屏蔽来源",
-                    info="选择不想搜索的书或合集（可多选）",
-                    multiselect=True,
-                )
-                search_toggle = gr.Checkbox(
-                    value=False, label="仅搜索（跳过 LLM 问答）",
-                    info="开启后只检索不生成回答",
+        with gr.Column(elem_classes="app-shell"):
+            with gr.Row(elem_classes="app-header"):
+                with gr.Column(scale=1, elem_classes="brand-block"):
+                    gr.HTML(
+                        '<h1 class="brand-title">Weber<span>知识库</span></h1>'
+                    )
+                    gr.Markdown(
+                        "聚焦马克斯·韦伯的著作与研究。",
+                        elem_classes="brand-subtitle",
+                    )
+                clear_button = gr.Button(
+                    "新对话",
+                    variant="secondary",
+                    size="sm",
+                    elem_classes="new-chat",
                 )
 
-                gr.Markdown("### 排序加权")
-                div_slider = gr.Slider(
-                    minimum=0, maximum=0.5, value=config.DIVERSITY_BONUS, step=0.01,
-                    label="每本书首位加权",
-                    info="每本书第一个结果的匹配分数加成（0 = 关闭）",
-                )
-                lang_slider = gr.Slider(
-                    minimum=0, maximum=0.3, value=config.CROSS_LANG_BONUS, step=0.01,
-                    label="跨语言加权",
-                    info="不同语言结果的分数加成（0 = 关闭）",
-                )
+            chatbot = gr.Chatbot(value=[], elem_id="weber-chat")
 
-                gr.Markdown("---")
-                gr.Markdown(
-                    "**使用提示**\n\n"
-                    "- 输入 `/new` 重置对话\n"
-                    "- 修改筛选后建议 `/new` 重置\n"
-                    "- 「仅搜索」模式不消耗 API\n\n"
-                    "**首次使用？**\n"
-                    "运行 `python setup.sh` 或 `setup.bat`"
-                )
-
-            # ── Main: chat ──
-            with gr.Column(scale=3, elem_classes="main-column"):
-                chatbot = gr.Chatbot(
-                    value=[],
-                    elem_classes="chatbot-container",
-                )
+            with gr.Row(elem_classes="composer"):
                 msg_input = gr.Textbox(
-                    placeholder="输入你的问题，按 Enter 发送（输入 /new 重置对话）...",
+                    placeholder="问一个关于韦伯的问题",
                     show_label=False,
                     container=False,
+                    lines=1,
+                    max_lines=6,
+                    elem_id="question-input",
                 )
-                gr.Examples(
-                    examples=[
-                        "韦伯如何定义'理想类型'？",
-                        "新教伦理与资本主义精神的核心论点是什么？",
-                        "韦伯对官僚制的分析",
-                    ],
-                    inputs=[msg_input],
+                send_button = gr.Button(
+                    "发送",
+                    variant="primary",
+                    elem_id="send-button",
+                )
+
+            with gr.Accordion("检索设置", open=False, elem_id="search-settings"):
+                with gr.Row(elem_classes="settings-grid"):
+                    src_dd = gr.Dropdown(
+                        choices=sources,
+                        value=[],
+                        label="包含来源",
+                        multiselect=True,
+                    )
+                    cat_dd = gr.Dropdown(
+                        choices=config.CATEGORIES,
+                        value=[],
+                        label="分类",
+                        multiselect=True,
+                    )
+                    exc_dd = gr.Dropdown(
+                        choices=sources,
+                        value=[],
+                        label="排除来源",
+                        multiselect=True,
+                    )
+                search_toggle = gr.Checkbox(
+                    value=False,
+                    label="仅返回原文检索结果",
                 )
 
         # ── Event handlers ──
+        chat_inputs = [
+            msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd,
+            exc_dd, div_bonus, lang_bonus,
+        ]
+        chat_outputs = [chatbot, msg_input, llm_state]
+
         msg_input.submit(
             fn=_handle_chat,
-            inputs=[msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd,
-                    exc_dd, div_slider, lang_slider],
-            outputs=[chatbot, msg_input, llm_state],
+            inputs=chat_inputs,
+            outputs=chat_outputs,
+        )
+        send_button.click(
+            fn=_handle_chat,
+            inputs=chat_inputs,
+            outputs=chat_outputs,
+        )
+        clear_button.click(
+            fn=_clear_chat,
+            outputs=chat_outputs,
         )
 
     return demo.queue(default_concurrency_limit=1, max_size=16)

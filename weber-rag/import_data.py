@@ -17,7 +17,7 @@ import json
 import time
 import numpy as np
 from store import reset_collections, get_collections
-from index_manifest import write_manifest
+from index_manifest import load_manifest, write_manifest
 
 
 def _get_dim(arr) -> int:
@@ -79,18 +79,37 @@ def import_data(input_path: str, force: bool = False, batch_size: int = 5000):
 
     sec_coll, chk_coll = get_collections()
 
-    # Check if data already exists
+    # Reuse an existing index only when both collection counts and the
+    # versioned manifest exactly match the archive. Interrupted batch imports
+    # can leave non-empty, incomplete collections behind.
     existing_secs = sec_coll.count()
     existing_chks = chk_coll.count()
     if existing_secs > 0 or existing_chks > 0:
+        existing_manifest = load_manifest()
+        if not force and _existing_index_is_current(
+            existing_secs,
+            existing_chks,
+            sec_count,
+            chk_count,
+            existing_manifest,
+            manifest,
+        ):
+            print(
+                "Existing data matches the archive "
+                f"({existing_secs} sections, {existing_chks} chunks)."
+            )
+            return
+
         if force:
             print(f"Overwriting existing data ({existing_secs} sections, {existing_chks} chunks)...")
-            reset_collections()
-            sec_coll, chk_coll = get_collections()
         else:
-            print(f"Data already exists ({existing_secs} sections, {existing_chks} chunks).")
-            print("Use --force to overwrite, or run ingest.py to add new sources.")
-            return
+            print(
+                "Existing data is incomplete or does not match the archive "
+                f"({existing_secs}/{sec_count} sections, "
+                f"{existing_chks}/{chk_count} chunks); rebuilding automatically..."
+            )
+        reset_collections()
+        sec_coll, chk_coll = get_collections()
 
     # Import sections
     if sec_count > 0:
@@ -158,6 +177,22 @@ def _import_collection(coll, ids, embeddings, documents, metadatas, batch_size):
         pct = min(100, end * 100 // len(id_list))
         print(f"  {pct}% ({end}/{len(id_list)})", end="\r")
     print()
+
+
+def _existing_index_is_current(
+    existing_secs: int,
+    existing_chks: int,
+    expected_secs: int,
+    expected_chks: int,
+    existing_manifest: dict | None,
+    archive_manifest: dict,
+) -> bool:
+    """Return whether an existing index is a complete copy of the archive."""
+    return (
+        existing_secs == expected_secs
+        and existing_chks == expected_chks
+        and existing_manifest == archive_manifest
+    )
 
 
 def _join_parts(input_path: str):

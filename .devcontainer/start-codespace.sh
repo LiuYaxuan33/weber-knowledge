@@ -4,9 +4,17 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+echo "[Weber] Waiting for the Python environment..."
+for _ in {1..120}; do
+  if python -c "import chromadb, gradio, sentence_transformers" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
 if ! python -c "import chromadb, gradio, sentence_transformers" >/dev/null 2>&1; then
-  echo "[Weber] Setup is not complete yet; startup will be retried after setup."
-  exit 0
+  echo "[Weber] Python environment did not become ready within 10 minutes."
+  exit 1
 fi
 
 if pgrep -f "weber-rag/(app|serve).py" >/dev/null; then

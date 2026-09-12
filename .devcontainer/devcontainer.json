@@ -19,5 +19,6 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/setup-codespace.sh && bash .devcontainer/start-codespace.sh",
-  "postStartCommand": "bash .devcontainer/start-codespace.sh"
+  "postStartCommand": "bash .devcontainer/start-codespace.sh",
+  "postAttachCommand": "bash .devcontainer/start-codespace.sh"
 }

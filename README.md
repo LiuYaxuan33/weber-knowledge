@@ -1,10 +1,27 @@
+---
+title: Weber Knowledge Base
+emoji: 📚
+colorFrom: gray
+colorTo: blue
+sdk: gradio
+app_file: weber-rag/serve.py
+python_version: "3.12"
+sdk_version: "6.27.0"
+---
+
 # Weber Knowledge Base
 
 马克斯·韦伯著作、传记与研究文献的个人 RAG 知识库。支持浏览器问答、仅检索、来源筛选和多轮追问。
 
 详细使用说明见 [weber-rag/README.md](weber-rag/README.md)。
 
-## 在线使用（GitHub Codespaces）
+## 公开在线使用（Hugging Face Spaces）
+
+项目可由 GitHub Actions 自动同步到公开的免费 Hugging Face Gradio Space。空间休眠后，访客打开固定链接会自动唤醒服务；首次唤醒需等待模型和向量索引初始化。
+
+在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置 `HF_TOKEN`、`HF_SPACE_ID` 和 `DEEPSEEK_API_KEY`，然后运行 `Deploy public Weber app` workflow。
+
+## 开发预览（GitHub Codespaces）
 
 项目包含 `.devcontainer` 配置。创建 Codespace 后会自动安装依赖、恢复 42,317 条向量、缓存 BGE-M3 模型并启动网页服务。
 

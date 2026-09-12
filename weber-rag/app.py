@@ -30,6 +30,32 @@ from rag_service import (
 embed_model = None
 
 
+# The main interface intentionally focuses on the two complete Chinese Weber
+# collections in this repository. Other material remains indexed, but no longer
+# leaks into the default answers just because a filter was left empty.
+SCOPE_BOTH = "两套作品集"
+SCOPE_SHANGHAI_PEOPLE = "上海人民出版社版"
+SCOPE_SHANGHAI_SANLIAN = "上海三联书店版"
+SCOPE_CHOICES = [SCOPE_BOTH, SCOPE_SHANGHAI_PEOPLE, SCOPE_SHANGHAI_SANLIAN]
+COLLECTION_PREFIXES = {
+    SCOPE_SHANGHAI_PEOPLE: ("上海人民-",),
+    SCOPE_SHANGHAI_SANLIAN: ("上海三联-",),
+    SCOPE_BOTH: ("上海人民-", "上海三联-"),
+}
+
+
+def _collection_sources(scope: str, selected_books: list[str] | None = None) -> list[str]:
+    """Resolve the simple UI scope to exact source names used by ChromaDB."""
+    prefixes = COLLECTION_PREFIXES.get(scope, COLLECTION_PREFIXES[SCOPE_BOTH])
+    available = [
+        source["name"] for source in config.SOURCES
+        if source["category"] == "韦伯著述"
+        and source["name"].startswith(prefixes)
+    ]
+    selected = [name for name in (selected_books or []) if name in available]
+    return selected or available
+
+
 def _ensure_model():
     global embed_model
     if embed_model is None:
@@ -85,12 +111,10 @@ def _do_qa(query: str, history: list[dict],
 # ── Gradio interface ─────────────────────────────────────────────────────────
 
 def _handle_chat(message: str, chat_history: list, llm_state,
-                 search_mode: bool, src_filter: list, cat_filter: list,
-                 exc_filter: list, div_bonus: float, lang_bonus: float):
+                 search_mode: bool, scope: str, book_filter: list,
+                 div_bonus: float, lang_bonus: float):
     """Process one chat turn."""
-    source = [s for s in (src_filter or []) if s] or None
-    category = [c for c in (cat_filter or []) if c] or None
-    excludes = [e for e in (exc_filter or []) if e] or None
+    source = _collection_sources(scope, book_filter)
     chat_history = list(chat_history) if chat_history else []
 
     # Handle / commands
@@ -107,8 +131,9 @@ def _handle_chat(message: str, chat_history: list, llm_state,
         chat_history.append({"role": "assistant", "content":
             "**命令：**\n"
             "- `/new` — 开始新话题\n"
-            "- 左侧可切换「仅搜索」模式和筛选条件\n"
-            "- 修改筛选条件后建议 `/new` 重置对话"
+            "- 可在输入框上方切换作品集版本\n"
+            "- “更多选项”里可以限定具体书目或仅查看原文\n"
+            "- 修改检索范围会自动开始新对话"
         })
         return chat_history, "", llm_state
 
@@ -118,8 +143,8 @@ def _handle_chat(message: str, chat_history: list, llm_state,
             answer = _do_search(
                 message,
                 source_filter=source,
-                category_filter=category,
-                source_exclude=excludes,
+                category_filter=None,
+                source_exclude=None,
                 diversity_bonus=div_bonus,
                 cross_lang_bonus=lang_bonus,
             )
@@ -130,8 +155,8 @@ def _handle_chat(message: str, chat_history: list, llm_state,
                 message,
                 state,
                 source_filter=source,
-                category_filter=category,
-                source_exclude=excludes,
+                category_filter=None,
+                source_exclude=None,
                 diversity_bonus=div_bonus,
                 cross_lang_bonus=lang_bonus,
             )
@@ -266,6 +291,38 @@ body {
     gap: 10px !important;
 }
 
+.scope-bar {
+    align-items: center !important;
+    flex: 0 0 auto !important;
+    gap: 10px !important;
+}
+
+.scope-label p {
+    margin: 0 !important;
+    color: var(--weber-muted);
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+#edition-scope {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+#edition-scope .wrap {
+    gap: 6px !important;
+}
+
+#edition-scope label {
+    border: 1px solid var(--weber-line) !important;
+    border-radius: 999px !important;
+    background: rgba(255, 254, 251, 0.72) !important;
+    padding: 6px 11px !important;
+    font-size: 13px !important;
+}
+
 #question-input {
     min-width: 0 !important;
     border: 1px solid var(--weber-line) !important;
@@ -353,9 +410,19 @@ def _clear_chat():
     return [], "", None
 
 
+def _clear_chat_and_books():
+    """Reset conversation and stale per-book choices after an edition change."""
+    return [], "", None, []
+
+
 def build_ui():
     """Build and return the Gradio Blocks app."""
-    sources = [g["source_name"] for g in list_sources_grouped(min_chunks=0)]
+    indexed_sources = {g["source_name"] for g in list_sources_grouped(min_chunks=0)}
+    collection_sources = [
+        source["name"] for source in config.SOURCES
+        if source["name"] in indexed_sources
+        and source["name"].startswith(("上海人民-", "上海三联-"))
+    ]
 
     with gr.Blocks(title="Weber 知识库", fill_height=True) as demo:
         # Hidden LLM conversation state
@@ -380,7 +447,21 @@ def build_ui():
                     elem_classes="new-chat",
                 )
 
-            chatbot = gr.Chatbot(value=[], elem_id="weber-chat")
+            chatbot = gr.Chatbot(
+                value=[],
+                show_label=False,
+                elem_id="weber-chat",
+            )
+
+            with gr.Row(elem_classes="scope-bar"):
+                gr.Markdown("检索范围", elem_classes="scope-label")
+                scope_radio = gr.Radio(
+                    choices=SCOPE_CHOICES,
+                    value=SCOPE_BOTH,
+                    show_label=False,
+                    container=False,
+                    elem_id="edition-scope",
+                )
 
             with gr.Row(elem_classes="composer"):
                 msg_input = gr.Textbox(
@@ -397,35 +478,23 @@ def build_ui():
                     elem_id="send-button",
                 )
 
-            with gr.Accordion("检索设置", open=False, elem_id="search-settings"):
-                with gr.Row(elem_classes="settings-grid"):
-                    src_dd = gr.Dropdown(
-                        choices=sources,
-                        value=[],
-                        label="包含来源",
-                        multiselect=True,
-                    )
-                    cat_dd = gr.Dropdown(
-                        choices=config.CATEGORIES,
-                        value=[],
-                        label="分类",
-                        multiselect=True,
-                    )
-                    exc_dd = gr.Dropdown(
-                        choices=sources,
-                        value=[],
-                        label="排除来源",
-                        multiselect=True,
-                    )
+            with gr.Accordion("更多选项", open=False, elem_id="search-settings"):
+                book_dd = gr.Dropdown(
+                    choices=collection_sources,
+                    value=[],
+                    label="限定具体书目",
+                    info="留空时搜索上方所选版本的全部作品",
+                    multiselect=True,
+                )
                 search_toggle = gr.Checkbox(
                     value=False,
-                    label="仅返回原文检索结果",
+                    label="仅查看相关原文，不生成回答",
                 )
 
         # ── Event handlers ──
         chat_inputs = [
-            msg_input, chatbot, llm_state, search_toggle, src_dd, cat_dd,
-            exc_dd, div_bonus, lang_bonus,
+            msg_input, chatbot, llm_state, search_toggle, scope_radio, book_dd,
+            div_bonus, lang_bonus,
         ]
         chat_outputs = [chatbot, msg_input, llm_state]
 
@@ -440,6 +509,14 @@ def build_ui():
             outputs=chat_outputs,
         )
         clear_button.click(
+            fn=_clear_chat,
+            outputs=chat_outputs,
+        )
+        scope_radio.change(
+            fn=_clear_chat_and_books,
+            outputs=[chatbot, msg_input, llm_state, book_dd],
+        )
+        book_dd.change(
             fn=_clear_chat,
             outputs=chat_outputs,
         )

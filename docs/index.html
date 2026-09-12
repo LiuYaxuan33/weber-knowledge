@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="在上海人民出版社与上海三联书店两套韦伯作品集中检索原文。" />
+    <title>韦伯作品检索</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="brand" href="./" aria-label="返回首页">
+        <span class="brand-mark">W</span>
+        <span>韦伯作品检索</span>
+      </a>
+      <span class="edition-note">上海人民 × 上海三联</span>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">MAX WEBER · TEXT SEARCH</p>
+        <h1>从原文里，找到答案。</h1>
+        <p class="lede">只检索两套中文作品集。无需登录，不会休眠，也不依赖付费服务器。</p>
+
+        <form id="search-form" class="search-card">
+          <fieldset class="scope-picker">
+            <legend>选择版本</legend>
+            <label><input type="radio" name="edition" value="all" checked /><span>两套作品集</span></label>
+            <label><input type="radio" name="edition" value="上海人民出版社" /><span>上海人民版</span></label>
+            <label><input type="radio" name="edition" value="上海三联书店" /><span>上海三联版</span></label>
+          </fieldset>
+
+          <label class="book-field">
+            <span>限定著作（可选）</span>
+            <select id="book-select" disabled>
+              <option value="">正在载入书目…</option>
+            </select>
+          </label>
+
+          <label class="question-field">
+            <span class="sr-only">输入问题或关键词</span>
+            <textarea id="query" rows="3" placeholder="例如：韦伯怎样区分权力与支配？" required></textarea>
+          </label>
+
+          <div class="search-actions">
+            <div id="status" class="status" role="status">正在载入两套作品集…</div>
+            <button id="submit-button" type="submit" disabled>
+              <span>检索原文</span><span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </form>
+
+        <div class="examples" aria-label="示例问题">
+          <span>试着问</span>
+          <button type="button">什么是卡里斯玛支配？</button>
+          <button type="button">资本主义精神与禁欲有什么关系？</button>
+          <button type="button">政治作为志业需要哪些品质？</button>
+        </div>
+      </section>
+
+      <section id="answer-section" class="answer-section" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">EXTRACTIVE ANSWER</p>
+            <h2>原文式回答</h2>
+          </div>
+          <p id="result-meta"></p>
+        </div>
+        <div id="answer" class="answer"></div>
+        <div class="source-heading">
+          <h3>相关原文</h3>
+          <span>按相关度排列</span>
+        </div>
+        <div id="results" class="results"></div>
+      </section>
+
+      <section id="empty-section" class="empty-section" hidden>
+        <h2>没有找到足够相关的原文</h2>
+        <p>可以换一个更具体的概念，或取消著作限定后再试。</p>
+      </section>
+    </main>
+
+    <footer>
+      <span>本工具只从所选作品集中提取原文，不生成或改写韦伯的观点。</span>
+      <span id="corpus-stats"></span>
+    </footer>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

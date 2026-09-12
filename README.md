@@ -1,25 +1,16 @@
----
-title: Weber Knowledge Base
-emoji: 📚
-colorFrom: gray
-colorTo: blue
-sdk: gradio
-app_file: weber-rag/serve.py
-python_version: "3.12"
-sdk_version: "6.27.0"
----
-
 # Weber Knowledge Base
 
 马克斯·韦伯著作、传记与研究文献的个人 RAG 知识库。支持浏览器问答、仅检索、来源筛选和多轮追问。
 
 详细使用说明见 [weber-rag/README.md](weber-rag/README.md)。
 
-## 公开在线使用（Hugging Face Spaces）
+## 公开在线使用（永久免费静态版）
 
-项目可由 GitHub Actions 自动同步到公开的免费 Hugging Face Gradio Space。空间休眠后，访客打开固定链接会自动唤醒服务；首次唤醒需等待模型和向量索引初始化。
+打开 <https://liuyaxuan33.github.io/weber-knowledge/>。这是专门面向上海人民出版社、上海三联书店两套韦伯作品集的浏览器全文检索版：无需登录、没有服务器休眠，也不会向访客暴露 API Key。问答采用带出处的原文提取，不调用外部大模型。
 
-在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置 `HF_TOKEN`、`HF_SPACE_ID` 和 `DEEPSEEK_API_KEY`，然后运行 `Deploy public Weber app` workflow。
+静态网页位于 `docs/`，每次推送到 `master` 后由 `Deploy free static Weber search` workflow 自动发布。运行 `node scripts/build_static_search_index.mjs` 可从现有 NPZ 索引重新生成浏览器语料。
+
+完整的向量检索与 DeepSeek 多轮问答仍可通过下面的 Codespaces 或本地版本使用。
 
 ## 开发预览（GitHub Codespaces）
 

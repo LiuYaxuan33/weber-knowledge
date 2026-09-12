@@ -2,16 +2,6 @@ name: Deploy public Weber app
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths:
-      - ".github/workflows/deploy-public-space.yml"
-      - "README.md"
-      - "requirements.txt"
-      - "requirements-dev.txt"
-      - "tests/**"
-      - "weber-rag/**"
-      - "scripts/deploy_hf_space.py"
 
 concurrency:
   group: deploy-public-weber-space

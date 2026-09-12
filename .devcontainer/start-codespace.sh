@@ -9,12 +9,7 @@ if ! python -c "import chromadb, gradio, sentence_transformers" >/dev/null 2>&1;
   exit 0
 fi
 
-if [[ ! -d "weber-rag/data/chroma_db" ]]; then
-  echo "[Weber] Vector index is not ready yet; startup will be retried after setup."
-  exit 0
-fi
-
-if pgrep -f "weber-rag/app.py.*--port 7860" >/dev/null; then
+if pgrep -f "weber-rag/(app|serve).py" >/dev/null; then
   echo "[Weber] Web app is already running."
   exit 0
 fi
@@ -24,9 +19,7 @@ nohup env \
   HOST=0.0.0.0 \
   PORT=7860 \
   WEBER_NO_BROWSER=1 \
-  HF_HUB_OFFLINE=1 \
-  TRANSFORMERS_OFFLINE=1 \
-  python weber-rag/app.py --host 0.0.0.0 --port 7860 \
+  python weber-rag/serve.py \
   >"$APP_LOG" 2>&1 &
 
 echo $! >"$HOME/weber-app.pid"

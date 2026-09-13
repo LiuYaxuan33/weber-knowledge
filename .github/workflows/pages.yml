@@ -1,11 +1,6 @@
 name: Deploy free static Weber search
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - "docs/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -19,6 +14,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ false }} # Retired public site; do not republish.
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

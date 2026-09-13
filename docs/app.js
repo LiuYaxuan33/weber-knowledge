@@ -1,3 +1,5 @@
+import { DEEPSEEK_API_URL } from "./config.js";
+
 const form = document.querySelector("#search-form");
 const queryInput = document.querySelector("#query");
 const bookSelect = document.querySelector("#book-select");
@@ -66,6 +68,31 @@ function renderAnswer(items) {
   }
 }
 
+function renderDeepSeekAnswer(text) {
+  answer.replaceChildren();
+  for (const block of text.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean)) {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = block;
+    answer.append(paragraph);
+  }
+}
+
+async function requestDeepSeek(question, items) {
+  if (!DEEPSEEK_API_URL) throw new Error("DeepSeek 后端尚未配置");
+  const sources = items.slice(0, 6).map((item) => ({
+    citation: citationText(item),
+    text: item.text,
+  }));
+  const response = await fetch(`${DEEPSEEK_API_URL.replace(/\/$/, "")}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, sources }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`);
+  return data.answer;
+}
+
 function renderResults(items) {
   resultsNode.replaceChildren();
   for (const item of items) {
@@ -117,7 +144,15 @@ worker.onmessage = ({ data }) => {
     renderResults(data.results);
     answerSection.hidden = false;
     answerSection.scrollIntoView({ behavior: "smooth" });
-    status.textContent = "检索完成";
+    status.textContent = "已找到原文，正在请 DeepSeek 回答…";
+    requestDeepSeek(data.query, data.results)
+      .then((text) => {
+        renderDeepSeekAnswer(text);
+        status.textContent = "DeepSeek 回答完成";
+      })
+      .catch((error) => {
+        status.textContent = `${error.message}；已显示原文摘录`;
+      });
   }
 };
 
@@ -141,4 +176,3 @@ for (const button of document.querySelectorAll(".examples button")) {
     queryInput.focus();
   });
 }
-

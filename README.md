@@ -6,7 +6,7 @@
 
 ## 公开在线使用（永久免费静态版）
 
-打开 <https://liuyaxuan33.github.io/weber-knowledge/>。这是专门面向上海人民出版社、上海三联书店两套韦伯作品集的浏览器全文检索版：无需登录、没有服务器休眠，也不会向访客暴露 API Key。问答采用带出处的原文提取，不调用外部大模型。
+打开 <https://liuyaxuan33.github.io/weber-knowledge/>。这是专门面向上海人民出版社、上海三联书店两套韦伯作品集的浏览器检索问答版：无需登录、没有服务器休眠。网页先在浏览器中定位原文，再通过 Cloudflare Worker 调用 DeepSeek；API Key 只保存在 Worker Secret 中。
 
 静态网页位于 `docs/`，每次推送到 `master` 后由 `Deploy free static Weber search` workflow 自动发布。运行 `node scripts/build_static_search_index.mjs` 可从现有 NPZ 索引重新生成浏览器语料。
 
